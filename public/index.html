@@ -60,29 +60,6 @@
               </div>
             </div>
 
-            <!-- Mảnh giấy nháp chọn nhanh đối thủ Máy & Màu mực -->
-            <div class="quick-setup-box">
-              <div class="quick-subbox">
-                <div class="subbox-row">
-                  <label for="select-ai-level">✒️ Chọn đối thủ cùng bàn (1–10):</label>
-                  <select id="select-ai-level" class="clean-select"></select>
-                </div>
-                <div class="subbox-row">
-                  <span>🖊️ Chọn cây bút bi của bạn:</span>
-                  <div class="pill-radio-group">
-                    <label class="pill-radio">
-                      <input type="radio" name="pve-side" value="X" checked />
-                      <span class="sym-x">Bút Xanh Thiên Long (X)</span>
-                    </label>
-                    <label class="pill-radio">
-                      <input type="radio" name="pve-side" value="O" />
-                      <span class="sym-o">Bút Đỏ Chấm Điểm (O)</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Các nút chọn chế độ chính (Kiểu mảnh giấy xé vở học trò) -->
             <div class="menu-primary-actions">
               <button id="btn-start-pve" type="button" class="btn-menu-main btn-menu-pve">
@@ -93,19 +70,11 @@
                 </div>
               </button>
 
-              <button id="btn-start-local" type="button" class="btn-menu-main btn-menu-local">
-                <span class="btn-icon">✌️</span>
-                <div class="btn-text">
-                  <strong>Chơi Chung Một Tờ Giấy (PvP Local)</strong>
-                  <small>2 đến 4 bạn học luân phiên chấm bút trên cùng màn hình</small>
-                </div>
-              </button>
-
               <button id="btn-open-coop" type="button" class="btn-menu-main btn-menu-online">
                 <span class="btn-icon">🏫</span>
                 <div class="btn-text">
-                  <strong>Đại Chiến Liên Lớp (PvP Co-op Online)</strong>
-                  <small>Tất cả cùng kéo sang đánh trên trang vở của Chủ Phòng</small>
+                  <strong>Chơi Cùng Bạn Bè (Co-op &amp; Chung Tờ Giấy)</strong>
+                  <small>Chơi chung 1 tờ giấy trên máy hoặc mở bàn đại chiến liên lớp</small>
                 </div>
               </button>
             </div>
@@ -132,8 +101,8 @@
         <header class="subpage-header">
           <button type="button" class="btn-back" data-target="view-menu">◀ Gấp vở về Menu</button>
           <div>
-            <h2>🏫 Giờ Ra Chơi — Đại Chiến Co-op Liên Lớp</h2>
-            <p class="subpage-desc">Cả phòng sẽ cùng tụ tập chấm bút trên Trang Vở Ô Ly của Chủ Phòng!</p>
+            <h2>🏫 Giờ Ra Chơi — Chơi Cùng Bạn Bè (Co-op &amp; Chung Tờ Giấy)</h2>
+            <p class="subpage-desc">Chơi chung 1 tờ giấy trên cùng thiết bị hoặc mở bàn Co-op đại chiến trên trang vở Chủ Phòng!</p>
           </div>
           <div class="telemetry-pills">
             <span id="online-conn-badge" class="conn-badge disconnected">Đang nối mạng...</span>
@@ -144,12 +113,15 @@
         <!-- Khi chưa vào phòng -->
         <div id="coop-outside-room" class="coop-grid">
           <div class="card-panel lined-paper-card">
-            <h3>1. Mở Quyển Vở Của Bạn (Làm Chủ Phòng)</h3>
-            <p class="hint-text">Khi bạn mở phòng, các bạn khác vào phòng sẽ đánh trực tiếp lên trang vở bạn đã chọn.</p>
+            <h3>1. Chọn Thể Thức Chơi Cùng Bạn Bè</h3>
+            <p class="hint-text">Chọn chơi chung 1 tờ giấy để vào bàn ngay, hoặc mở bàn Co-op để các bạn khác cùng đánh lên trang vở bạn chọn.</p>
 
             <div class="form-group">
               <label>Chọn thể thức giao đấu:</label>
               <div class="submode-selector">
+                <button id="btn-start-local" type="button" class="online-submode-btn submode-local-direct" data-submode="local">
+                  ✌️ Chơi Chung 1 Tờ Giấy (2–4 bạn chung màn hình — Vào đánh ngay không cần tạo bàn)
+                </button>
                 <button type="button" class="online-submode-btn active" data-submode="1v1">⚔️ Đấu Tay Đôi 1v1 (+Bạn xem ké)</button>
                 <button type="button" class="online-submode-btn" data-submode="team">🤝 Chia 2 Tổ (Đội X đấu Đội O)</button>
                 <button type="button" class="online-submode-btn" data-submode="ffa">🔥 Hỗn Chiến Bàn Cuối (2–4 màu mực: X, O, Δ, □)</button>
@@ -420,6 +392,44 @@
         </div>
       </header>
 
+      <!-- Thanh cấu hình chế độ chơi (Chọn cấp độ máy PvE hoặc số bạn chơi chung tờ giấy Local) -->
+      <div id="game-mode-toolbar" class="game-mode-toolbar">
+        <!-- Điều khiển khi ở chế độ Đấu Với Máy (PvE) -->
+        <div id="pve-game-controls" class="mode-controls-row">
+          <div class="mode-ctrl-group">
+            <label for="select-ai-level">✒️ Cấp độ máy:</label>
+            <select id="select-ai-level" class="clean-select compact-select"></select>
+          </div>
+          <div class="mode-ctrl-group">
+            <span>🖊️ Bút của bạn:</span>
+            <div class="pill-radio-group">
+              <label class="pill-radio">
+                <input type="radio" name="pve-side" value="X" checked />
+                <span class="sym-x">X (Đi trước)</span>
+              </label>
+              <label class="pill-radio">
+                <input type="radio" name="pve-side" value="O" />
+                <span class="sym-o">O (Đi sau)</span>
+              </label>
+            </div>
+          </div>
+          <button id="btn-pve-start-game" type="button" class="btn-accent-sm">▶️ Bắt đầu ván mới</button>
+        </div>
+
+        <!-- Điều khiển khi ở chế độ Chơi Chung 1 Tờ Giấy (PvP Local) -->
+        <div id="local-game-controls" class="mode-controls-row hidden">
+          <div class="mode-ctrl-group">
+            <label for="select-local-players">✌️ Số bạn chơi chung tờ giấy:</label>
+            <select id="select-local-players" class="clean-select compact-select">
+              <option value="2">2 Bạn (Bút Xanh X - Bút Đỏ O)</option>
+              <option value="3">3 Bạn (X - O - Δ Mực Tím)</option>
+              <option value="4">4 Bạn (X - O - Δ - □ Mực Xanh Lá)</option>
+            </select>
+          </div>
+          <span class="mode-hint-pill">Thay phiên nhau chấm bút ngay trên trang vở này!</span>
+        </div>
+      </div>
+
       <!-- Mẩu giấy báo kết quả ván đấu & đã khoanh vùng điểm chết -->
       <div id="game-end-banner" class="game-end-banner hidden">
         <div class="banner-text">
@@ -434,6 +444,29 @@
         <div class="notebook-paper-scroll">
           <canvas id="notebook-canvas"></canvas>
         </div>
+
+        <!-- Khung Chat trực tiếp trong chế độ Co-op Online (Mẩu giấy chuyền tay góc bàn học) -->
+        <aside id="game-coop-chat-panel" class="game-coop-chat-panel hidden">
+          <div class="game-chat-header">
+            <span class="game-chat-title">💬 Bàn học <strong id="game-chat-room-code">#----</strong></span>
+            <div class="game-chat-header-btns">
+              <button id="btn-goto-coop-lobby" type="button" class="btn-chat-mini" title="Về phòng chờ đổi màu bút / lật trang">🏫 Phòng chờ</button>
+              <button id="btn-minimize-game-chat" type="button" class="btn-chat-mini" title="Thu gọn / Mở rộng khung chat">➖</button>
+            </div>
+          </div>
+          <div id="game-chat-body" class="game-chat-body">
+            <div id="game-chat-log" class="chat-log-box game-chat-log"></div>
+            <div class="quick-chat-row">
+              <button type="button" class="quick-chat-chip" data-msg="Lẹ tay lên bạn ơi, trống trường sắp đánh rồi!">Lẹ tay lên!</button>
+              <button type="button" class="quick-chat-chip" data-msg="Nước này cao tay đó nha!">Cao tay đó!</button>
+              <button type="button" class="quick-chat-chip" data-msg="Coi chừng vướng vùng khoanh ván cũ đó!">Chú ý điểm chết!</button>
+            </div>
+            <div class="chat-send-row">
+              <input id="input-game-chat-msg" type="text" placeholder="Nhắn tin bàn học..." maxlength="120" class="clean-input" />
+              <button id="btn-send-game-chat" type="button" class="btn-primary">Gửi</button>
+            </div>
+          </div>
+        </aside>
       </div>
 
       <!-- Mép dưới trang vở -->

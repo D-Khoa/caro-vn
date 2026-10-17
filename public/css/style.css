@@ -623,6 +623,24 @@ body {
   box-shadow: 2px 2px 0 var(--ink-blue);
 }
 
+.online-submode-btn.submode-local-direct {
+  border: 2px solid var(--ink-green);
+  background: #ecfdf5;
+  color: #065f46;
+  box-shadow: 2px 2px 0 var(--ink-green);
+  transition: transform 0.12s, background 0.12s;
+}
+
+.online-submode-btn.submode-local-direct:hover {
+  background: #d1fae5;
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed !important;
+}
+
 .host-page-picker-row {
   display: flex;
   align-items: center;
@@ -1274,6 +1292,52 @@ body {
   gap: 3px;
 }
 
+/* Thanh cấu hình chế độ chơi (PvE / PvP Local) dưới Topbar */
+.game-mode-toolbar {
+  background: #fef9c3;
+  border-bottom: 2px dashed #b45309;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.mode-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  width: 100%;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #451a03;
+}
+
+.mode-ctrl-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compact-select {
+  padding: 3px 8px;
+  font-size: 12.5px;
+  max-width: 260px;
+}
+
+.mode-hint-pill {
+  background: #fffef9;
+  border: 1px dashed #15803d;
+  color: #166534;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
 /* Mẩu giấy báo kết thúc ván cờ */
 .game-end-banner {
   background: #fef9c3;
@@ -1309,9 +1373,12 @@ body {
   justify-content: center;
   overflow: hidden;
   padding: 8px;
+  position: relative;
+  gap: 10px;
 }
 
 .notebook-paper-scroll {
+  flex: 1;
   width: 100%;
   height: 100%;
   overflow: auto;
@@ -1319,6 +1386,78 @@ body {
   align-items: flex-start;
   justify-content: center;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Khung Chat Co-op trực tiếp trong màn hình chơi (#view-game) */
+.game-coop-chat-panel {
+  width: 280px;
+  max-height: 100%;
+  background: var(--paper-9x);
+  border: 2px solid #1e3a8a;
+  border-radius: 10px;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  z-index: 15;
+}
+
+.game-coop-chat-panel.collapsed .game-chat-body {
+  display: none;
+}
+
+.game-coop-chat-panel.collapsed {
+  width: auto;
+  align-self: flex-start;
+}
+
+.game-chat-header {
+  background: #164e63;
+  color: #fef08a;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-bottom: 2px solid #08202b;
+}
+
+.game-chat-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-chat-mini {
+  font-family: var(--font-hand);
+  background: #fef9c3;
+  color: #1e3a8a;
+  border: 1px solid #08202b;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.btn-chat-mini:hover {
+  background: #fde047;
+}
+
+.game-chat-body {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.game-chat-log {
+  height: 160px;
+  margin: 0;
+  font-size: 12px;
 }
 
 /* Hiệu ứng chồng giấy dày 200 trang ở mép vở */
@@ -1432,6 +1571,19 @@ body {
   .topbar-meta {
     display: none;
   }
+
+  .gameplay-sheet-stage {
+    flex-direction: column;
+  }
+
+  .game-coop-chat-panel {
+    width: 100%;
+    max-height: 195px;
+  }
+
+  .game-chat-log {
+    height: 68px;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1494,6 +1646,21 @@ body {
   .game-minimal-topbar {
     padding: 6px 8px;
     gap: 5px;
+  }
+
+  .game-mode-toolbar {
+    padding: 4px 8px;
+  }
+
+  .mode-controls-row {
+    gap: 6px 8px;
+    font-size: 11.5px;
+  }
+
+  .compact-select {
+    max-width: 190px;
+    font-size: 11.5px;
+    padding: 2px 6px;
   }
 
   .topbar-left,

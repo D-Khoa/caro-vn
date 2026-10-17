@@ -4,6 +4,28 @@ Mọi thay đổi quan trọng, tính năng mới, cải tiến giao diện và 
 
 ---
 
+## [1.4.0] - 2026-10-17 — Tối ưu Luồng Chơi PvE, Gộp PvP Local vào Co-op, Khung Chat Trực Tiếp & Khắc Phục Tạo Bàn Dev Server
+
+### Thêm mới & Cải tiến (Added & Changed)
+- **Luồng chơi Đấu Với Máy (PvE) trong `#view-game`:**
+  - Dọn sạch khối `.quick-setup-box` và nút chọn Local khỏi `#view-menu`. Menu chính nay được tinh giản tối đa chỉ còn 2 lối vào trực quan: **Đấu Với Máy Cùng Bàn (PvE)** và **Chơi Cùng Bạn Bè (Co-op & Chung Tờ Giấy)**.
+  - Tích hợp thanh công cụ `#game-mode-toolbar` trực tiếp ngay dưới thước kẻ của màn hình `#view-game`: cho phép người chơi chọn cấp độ AI (1–10) và màu bút (`X` / `O`) ngay trong giao diện bàn cờ.
+  - **Không tự động bắt đầu ván mới:** Khi người chơi vào bàn, lật trang, đổi sang cầm `O` (máy đi trước) hoặc khi vừa kết thúc 1 ván cờ, máy **tuyệt đối không tự động đánh** cho tới khi người chơi chủ động bấm nút `▶️ Bắt đầu ván mới` hoặc tự tay chấm nước cờ đầu tiên.
+- **Gộp Chế độ Chơi Chung 1 Tờ Giấy (PvP Local) vào Sảnh Co-op:**
+  - Đưa thể thức **Chơi Chung 1 Tờ Giấy (2–4 bạn chung màn hình)** vào thẳng sảnh Co-op (`#view-coop-lobby`).
+  - Khi chọn thể thức này, hệ thống **không cần tạo phòng online** mà chuyển thẳng vào màn hình bàn cờ `#view-game` với thanh điều khiển `#local-game-controls` (hỗ trợ chọn nhanh 2, 3 hoặc 4 bạn chơi chung tờ giấy).
+- **Quy tắc Bắt đầu Bàn Co-op & Khung Chat Trực tiếp Trong Game:**
+  - Bàn Co-op bắt buộc phải có ít nhất **2 người chơi thuộc 2 phe khác nhau** (`heldActiveSymbols.size >= 2`) mới mở khóa nút bắt đầu ván đấu. Khi chưa đủ, nút `#btn-enter-coop-board` hiển thị `⏳ Đợi đủ 2 phe khác nhau để bắt đầu...`.
+  - Khi bắt đầu ván cờ, gói tin `coop_game_started` được phát thanh tới toàn phòng, giúp **tất cả người chơi tự động được chuyển từ sảnh chờ vào màn hình bàn cờ `#view-game` cùng một lúc**.
+  - Tích hợp khung chat trực tiếp `#game-coop-chat-panel` ngay trong màn hình bàn cờ `#view-game`: đồng bộ thời gian thực với phòng chờ, hỗ trợ chip chat nhanh, có nút thu gọn/mở rộng và nút quay lại phòng chờ.
+
+### Đã sửa (Fixed)
+- **Khắc phục lỗi không tạo được bàn Co-op khi chạy qua VS Code Live Server / Dev Server (`public/js/multiplayer.js`):**
+  - Bổ sung cơ chế **Xác thực bắt tay hai chiều (`serverHandshakeVerified`)** với timeout `1.2s`: không còn tin tưởng mù quáng vào `socket.onopen` khi gặp phải cổng WebSocket nội bộ của Live Server (cổng 5500) hoặc Vite. Nếu không nhận được bản tin `{ type: 'welcome' }` từ Game Server Caro thực sự, client tự động ngắt kết nối giả và chuyển sang cơ chế Fallback 3 lớp (`BroadcastChannel` + `localStorage` + `Cloud MQTT Relay`).
+  - Bổ sung định tuyến tự động khi chạy dev trên máy cá nhân: ưu tiên kết nối tới cổng Game Server `3000` nếu khả dụng, giúp việc tạo bàn, tham gia phòng và thi đấu diễn ra mượt mà trong mọi môi trường chạy thử.
+
+---
+
 ## [1.3.1] - 2026-10-17 — Kiểm thử Đa Tác Tử (4 Subagents) & Hoàn thiện Chế độ Co-op Online
 > **Commit:** `d5f18f0` — *fix(coop): resolve multi-player edge cases found by 4 player subagents*
 

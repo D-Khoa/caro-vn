@@ -204,6 +204,7 @@ function serializeRoom(room) {
     moves: room.moves,
     archivedGames: room.archivedGames,
     activeGameId: room.activeGameId,
+    gameStarted: Boolean(room.gameStarted),
     players: Array.from(room.players.values()).map(p => ({
       clientId: p.clientId,
       name: p.name,
@@ -304,6 +305,15 @@ function removeClientFromCurrentRoom(ws) {
     }
   }
 
+  const remainingActiveSymbols = new Set(
+    Array.from(room.players.values())
+      .map(p => p.symbol)
+      .filter(sym => sym && sym !== 'SPECTATOR')
+  );
+  if (remainingActiveSymbols.size < 2 && room.moves.length === 0) {
+    room.gameStarted = false;
+  }
+
   recomputeRoomTurnState(room);
 
   broadcastToRoom(room, {
@@ -348,6 +358,7 @@ function createRoomForClient(ws, {
     turnIndex: 0,
     activeSymbols: ['X', 'O'],
     currentTurnSymbol: 'X',
+    gameStarted: false,
     players: new Map(),
     createdAt: Date.now()
   };
@@ -667,6 +678,37 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'start_coop_game': {
+        const room = rooms.get(ws.roomId);
+        if (!room) break;
+        const player = room.players.get(ws.clientId);
+        if (!player) break;
+
+        const heldActiveSymbols = new Set(
+          Array.from(room.players.values())
+            .map(p => p.symbol)
+            .filter(sym => sym && sym !== 'SPECTATOR')
+        );
+        if (heldActiveSymbols.size < 2) {
+          sendJson(ws, {
+            type: 'error_msg',
+            message: 'Cần ít nhất 2 người chơi thuộc 2 phe khác nhau để bắt đầu ván đấu!'
+          });
+          break;
+        }
+
+        room.gameStarted = true;
+        recomputeRoomTurnState(room);
+
+        broadcastToRoom(room, {
+          type: 'coop_game_started',
+          startedBy: player.name,
+          room: serializeRoom(room)
+        });
+        broadcastRoomListToAll();
+        break;
+      }
+
       case 'place_move': {
         const room = rooms.get(ws.roomId);
         if (!room) break;
@@ -903,7 +945,7 @@ wss.on('connection', (ws) => {
           type: 'chat_message',
           clientId: ws.clientId,
           sender: player ? player.name : ws.playerName,
-          symbol: player ? player.symbol : '•',
+          symbol: player ? player.symbol : '-',
           text,
           at: Date.now()
         });

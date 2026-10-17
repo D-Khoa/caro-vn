@@ -1,7 +1,7 @@
 # 📘 Tài Liệu Vòng Đời Phát Triển Phần Mềm (SDLC) — Cờ Caro Vở Ô Ly Việt Nam
 
 > **Tên dự án:** Cờ Caro Vở Ô Ly Việt Nam (`caro-vo-o-ly-vn`)  
-> **Phiên bản tài liệu:** `1.3.1` (Cập nhật: `2026-10-17`)  
+> **Phiên bản tài liệu:** `1.4.0` (Cập nhật: `2026-10-17`)  
 > **Repository:** `https://github.com/D-Khoa/caro-vn`  
 > **Mục đích:** Tài liệu chuẩn hóa toàn bộ quy trình **SDLC (Software Development Life Cycle)** từ Yêu cầu nghiệp vụ, Kiến trúc hệ thống, Thiết kế dữ liệu, Giao thức mạng, Các bất biến kỹ thuật (Invariants) đến Quy trình kiểm thử và Hướng dẫn mở rộng tính năng mới.
 
@@ -26,9 +26,9 @@
 | **FR-02** | **Quyển Vở 200 Trang** | Mỗi người chơi sở hữu 1 quyển vở `200 trang` lưu trữ cục bộ bền vững trên trình duyệt (`IndexedDB` kết hợp `localStorage` index). Hỗ trợ lật từng trang, xem mục lục 200 trang, lọc trang đã viết / giấy trắng, tẩy trang và Xuất/Nhập file `.json`. |
 | **FR-03** | **Khoanh vùng Điểm chết Đa ván** | Một trang vở sử dụng được cho **nhiều ván cờ độc lập**. Khi kết thúc 1 ván (thắng, hòa hoặc khoanh sớm), hệ thống vẽ đường viền bút bi bo sát thế cờ vừa đánh kèm nhãn kết quả (`Ván #1: X thắng...`). Phần bên trong đường khoanh trở thành **Điểm chết (Dead Zone)** — các ván tiếp theo trên cùng trang không thể đánh đè lên và không liên kết chuỗi 5 với quân của ván cũ. |
 | **FR-04** | **Luật Cờ Caro Việt Nam** | Thắng khi tạo chuỗi `>= 5` quân liên tiếp theo 4 phương (ngang, dọc, chéo chính, chéo phụ). Hỗ trợ bật/tắt **Luật chặn 2 đầu**: nếu chuỗi đúng 5 quân bị chặn cả 2 đầu bởi quân đối phương, mép giấy hoặc ô thuộc **Điểm chết**, nước đi đó chưa được tính thắng. |
-| **FR-05** | **Chế độ PvE (10 Cấp độ AI)** | Đấu với máy gồm 10 cấp độ từ **Cấp 1 (Tập Sự)** đến **Cấp 10 (Cờ Thánh)**. AI tự động nhận biết và né tránh các vùng Điểm chết của các ván cũ trên trang vở. |
-| **FR-06** | **Chế độ PvP Local** | Nhiều người chơi (`2–4 người`: `X`, `O`, `Δ`, `□`) thay phiên nhau chấm bút trên cùng 1 màn hình thiết bị. |
-| **FR-07** | **Chế độ PvP Co-op Online** | Nhiều người chơi online cùng đại chiến trực tiếp trên **Trang vở của Chủ phòng**. Chủ phòng có quyền chọn bất kỳ trang nào (`1 -> 200`) từ quyển vở của mình trước khi bắt đầu ván. Hỗ trợ 3 thể thức: **Đấu 1v1 (+Khán giả)**, **Chia 2 Tổ (Đội X vs Đội O)**, và **Hỗn Chiến 2–4 Người (`X`, `O`, `Δ`, `□`)**. |
+| **FR-05** | **Chế độ PvE (10 Cấp độ AI)** | Đấu với máy gồm 10 cấp độ từ **Cấp 1 (Tập Sự)** đến **Cấp 10 (Cờ Thánh)**. Bảng chọn cấp độ và phe cầm bút (`X`/`O`) nằm trực tiếp trong thanh công cụ bàn cờ (`#view-game`). Ván mới **không tự động bắt đầu** khi đổi trang, đổi cấp độ hay kết thúc ván; ván chỉ bắt đầu khi người chơi bấm nút `▶️ Bắt đầu ván mới` hoặc tự tay hạ nước cờ `X` đầu tiên. AI tự động nhận biết và né tránh các vùng Điểm chết của các ván cũ trên trang vở. |
+| **FR-06** | **Chế độ PvP Local (Chung 1 Tờ Giấy)** | Nhiều người chơi (`2–4 người`: `X`, `O`, `Δ`, `□`) thay phiên nhau chấm bút trên cùng 1 màn hình thiết bị. Chế độ được tích hợp ngay trong Sảnh Co-op (`#view-coop-lobby`), khi chọn sẽ bỏ qua bước tạo phòng online và vào thẳng trang vở thi đấu. |
+| **FR-07** | **Chế độ PvP Co-op Online** | Nhiều người chơi online cùng đại chiến trực tiếp trên **Trang vở của Chủ phòng**. Chủ phòng có quyền chọn bất kỳ trang nào (`1 -> 200`) từ quyển vở của mình trước khi bắt đầu ván. Hỗ trợ 3 thể thức: **Đấu 1v1 (+Khán giả)**, **Chia 2 Tổ (Đội X vs Đội O)**, và **Hỗn Chiến 2–4 Người (`X`, `O`, `Δ`, `□`)**. Bàn chỉ bắt đầu khi có ít nhất 2 phe cầm bút khác nhau (`heldActiveSymbols.size >= 2`). Khi bắt đầu, toàn bộ người chơi được chuyển đồng bộ vào bàn cờ (`#view-game`), kèm khung chat mẩu giấy nháp (`#game-coop-chat-panel`) để đàm đạo trực tiếp. |
 
 ### 1.2. Yêu cầu Phi chức năng (Non-Functional Requirements)
 - **NFR-01 (Hiệu năng & Chịu tải):** Đáp ứng **10,000 người chơi cùng lúc (10k CCU)** với độ trễ truyền tin `< 3s` (thực tế đạt `< 30ms` trên mạng LAN/Local và `< 150ms` qua Cloud Relay).
@@ -186,6 +186,7 @@ caro-vn/
   "hostDateHeader": "Thứ Bảy, ngày 17 tháng 10 năm 2026",
   "subMode": "1v1",
   "blockTwoEnds": true,
+  "gameStarted": true,
   "activeSymbols": ["X", "O"],
   "currentTurnSymbol": "X",
   "moves": [],
@@ -207,9 +208,11 @@ caro-vn/
 | **Client → Server** | `quick_match` | `{ playerName, subMode, blockTwoEnds, pageNumber, ... }` | Tìm phòng có `r.roomId !== ws.roomId` và còn thiếu tay cờ (`activeCount < max`). Nếu không có phòng nào khác, giữ nguyên phòng hiện tại hoặc tạo phòng mới. |
 | **Client → Server** | `host_select_page` | `{ pageNumber, dateHeader, archivedGames }` | Chỉ cho phép khi `isHost` và `room.moves.length === 0`. Cập nhật `pageOwnerClientId = ws.clientId` và phát `host_page_changed`. |
 | **Client → Server** | `switch_symbol` | `{ symbol }` | Chặn đổi phe hoặc chuyển sang `SPECTATOR` khi `room.moves.length > 0` (trừ Khán giả vào nhận bút trống). Chặn trùng ký hiệu trong `1v1` và `ffa`. |
+| **Client → Server** | `start_coop_game` | `{}` | Bắt buộc có `>= 2` phe người chơi khác nhau đang cầm bút (`heldActiveSymbols.size >= 2`). Đặt `room.gameStarted = true` và phát `coop_game_started` tới toàn bộ thành viên. |
+| **Server → Client** | `coop_game_started` | `{ startedBy, room }` | Báo cho toàn thể người chơi trong phòng (chủ, khách, khán giả) chuyển đồng bộ vào màn hình thi đấu `#view-game`. |
 | **Client → Server** | `place_move` | `{ r, c }` | Bắt buộc có `>= 2` phe cầm bút trong bàn, đúng lượt `currentTurnSymbol`, ô `(r, c)` trống và không thuộc `deadSet`. |
 | **Client → Server** | `new_round_same_page` | `{}` | Chỉ `isHost` được phép gọi khi `room.moves.length > 0` để khoanh vùng sớm ván đang đánh thành Hòa và mở ván mới trên phần giấy trống còn lại. |
-| **Client → Server** | `chat` | `{ text }` | Gửi tin nhắn tối đa 120 ký tự kèm `clientId`, `sender`, `symbol`. |
+| **Client → Server** | `chat` | `{ text }` | Gửi tin nhắn tối đa 120 ký tự kèm `clientId`, `sender`, `symbol`. Đồng bộ hai chiều giữa sảnh phòng và khung chat `#game-coop-chat-panel`. |
 
 ---
 

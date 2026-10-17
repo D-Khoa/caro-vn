@@ -37,6 +37,8 @@ export class MultiplayerClient {
     this.hostAdvertiseTimer = null;
 
     this.usingFallback = false;
+    this.serverHandshakeVerified = false;
+    this.welcomeTimer = null;
     this.handlers = handlers;
     this.connected = false;
     this.clientId = `u_${Math.random().toString(36).slice(2, 9)}`;
@@ -80,7 +82,7 @@ export class MultiplayerClient {
       this.ws &&
       (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
     ) {
-      if (this.ws.readyState === WebSocket.OPEN) {
+      if (this.ws.readyState === WebSocket.OPEN && this.serverHandshakeVerified) {
         this._flushPendingPayloads();
       }
       return;
@@ -94,7 +96,19 @@ export class MultiplayerClient {
     }
 
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = this.customWsUrl || `${proto}//${window.location.host}/ws`;
+    let url = this.customWsUrl;
+    if (!url) {
+      const isLocalHost =
+        window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      // Nếu người chơi đang mở webgame qua VS Code Live Server hoặc static dev server (port khác 3000):
+      // Ưu tiên trỏ tới WebSocket Game Server tại cổng 3000. Nếu cổng 3000 không chạy,
+      // socket sẽ đóng ngay lập tức và tự động chuyển sang cơ chế Fallback (BroadcastChannel + Cloud MQTT)
+      if (isLocalHost && window.location.port && window.location.port !== '3000') {
+        url = `${proto}//${window.location.hostname}:3000/ws`;
+      } else {
+        url = `${proto}//${window.location.host}/ws`;
+      }
+    }
 
     let socket;
     try {
@@ -105,15 +119,27 @@ export class MultiplayerClient {
       return;
     }
 
+    // Đặt bộ đếm thời gian kiểm tra bắt tay (handshake timeout):
+    // Nếu trong vòng 1200ms socket không nhận được bản tin 'welcome' từ Game Server thực sự
+    // (ví dụ cổng WebSocket live-reload của VS Code Live Server/Vite), tự động ngắt và kích hoạt Fallback
+    if (this.welcomeTimer) {
+      clearTimeout(this.welcomeTimer);
+      this.welcomeTimer = null;
+    }
+    this.welcomeTimer = setTimeout(() => {
+      if (this.ws === socket && !this.serverHandshakeVerified) {
+        try {
+          socket.close();
+        } catch (_) {}
+        this.ws = null;
+        this.serverHandshakeVerified = false;
+        this._enableBroadcastChannelFallback();
+      }
+    }, 1200);
+
     socket.onopen = () => {
       if (this.ws !== socket) return;
-      this.usingFallback = false;
-      this.connected = true;
-      this._startPingLoop();
-      if (this.handlers.onConnectionChange) {
-        this.handlers.onConnectionChange(true, 'server');
-      }
-      this._flushPendingPayloads();
+      // Chờ gói tin 'welcome' từ Caro Game Server để xác thực server trước khi flush payloads
     };
 
     socket.onmessage = (event) => {
@@ -124,12 +150,33 @@ export class MultiplayerClient {
       } catch (_) {
         return;
       }
+
+      if (msg.type === 'welcome') {
+        if (this.welcomeTimer) {
+          clearTimeout(this.welcomeTimer);
+          this.welcomeTimer = null;
+        }
+        this.serverHandshakeVerified = true;
+        this.usingFallback = false;
+        this.connected = true;
+        this._startPingLoop();
+        if (this.handlers.onConnectionChange) {
+          this.handlers.onConnectionChange(true, 'server');
+        }
+        this._flushPendingPayloads();
+      }
+
       this._handleMessage(msg);
     };
 
     socket.onclose = () => {
+      if (this.welcomeTimer) {
+        clearTimeout(this.welcomeTimer);
+        this.welcomeTimer = null;
+      }
       if (this.ws !== socket) return;
       this.ws = null;
+      this.serverHandshakeVerified = false;
       if (!this.usingFallback) {
         this.connected = false;
         this._stopPingLoop();
@@ -444,7 +491,7 @@ export class MultiplayerClient {
       this._processFallbackAction(payload);
       return;
     }
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.serverHandshakeVerified) {
       this.ws.send(JSON.stringify(payload));
     } else {
       this.pendingPayloads.push(payload);
@@ -532,6 +579,12 @@ export class MultiplayerClient {
     });
   }
 
+  startCoopGame() {
+    this.send({
+      type: 'start_coop_game'
+    });
+  }
+
   sendChat(text) {
     this.send({
       type: 'chat',
@@ -554,7 +607,7 @@ export class MultiplayerClient {
       this._processFallbackAction(payload);
       return;
     }
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.serverHandshakeVerified) {
       this.send(payload);
       return;
     }
@@ -590,6 +643,13 @@ export class MultiplayerClient {
         this.roomState = msg.room;
         if (this.handlers.onRoomState) {
           this.handlers.onRoomState(msg.room, msg.notice || null);
+        }
+        break;
+
+      case 'coop_game_started':
+        this.roomState = msg.room;
+        if (this.handlers.onGameStarted) {
+          this.handlers.onGameStarted(msg);
         }
         break;
 
@@ -680,6 +740,14 @@ export class MultiplayerClient {
         r.players[0].isHost = true;
         notice = `${leavingPlayer ? leavingPlayer.name : 'Chủ phòng'} đã rời bàn. ${r.players[0].name} trở thành Chủ phòng mới!`;
       }
+      const remainingActiveSymbols = new Set(
+        (r.players || [])
+          .map(p => p.symbol)
+          .filter(sym => sym && sym !== 'SPECTATOR')
+      );
+      if (remainingActiveSymbols.size < 2 && (r.moves?.length || 0) === 0) {
+        r.gameStarted = false;
+      }
       this._recomputeFallbackActiveSymbols(r);
       r.updatedAt = Date.now();
       this.localFallbackRooms.set(leavingRoomId, r);
@@ -717,6 +785,7 @@ export class MultiplayerClient {
       moves: [],
       archivedGames: payload.archivedGames || [],
       activeGameId: `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      gameStarted: false,
       updatedAt: Date.now(),
       players: [
         {
@@ -934,6 +1003,41 @@ export class MultiplayerClient {
         this._saveRoomsToLocalStorage();
         this._broadcastFallback({ type: 'sync_room', room: this.roomState });
         this._handleMessage({ type: 'room_state', room: this.roomState });
+        this._emitFallbackRoomList();
+        break;
+      }
+
+      case 'start_coop_game': {
+        if (!this.roomState) return;
+        const me = (this.roomState.players || []).find(p => p.clientId === this.clientId);
+        if (!me) return;
+
+        const heldActiveSymbols = new Set(
+          (this.roomState.players || [])
+            .map(p => p.symbol)
+            .filter(sym => sym && sym !== 'SPECTATOR')
+        );
+        if (heldActiveSymbols.size < 2) {
+          this._handleMessage({
+            type: 'error_msg',
+            message: 'Cần ít nhất 2 người chơi thuộc 2 phe khác nhau để bắt đầu ván đấu!'
+          });
+          return;
+        }
+
+        this.roomState.gameStarted = true;
+        this._recomputeFallbackActiveSymbols(this.roomState);
+        this.roomState.updatedAt = Date.now();
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
+
+        const startMsg = {
+          type: 'coop_game_started',
+          startedBy: me.name,
+          room: this.roomState
+        };
+        this._broadcastFallback(startMsg);
+        this._handleMessage(startMsg);
         this._emitFallbackRoomList();
         break;
       }
@@ -1319,7 +1423,7 @@ export class MultiplayerClient {
       } else if (msg.room.players?.some(p => p.clientId === this.clientId)) {
         this._handleMessage({ type: 'room_state', room: msg.room, notice: msg.notice || null });
       }
-    } else if (['host_page_changed', 'move_made', 'game_over'].includes(msg.type) && msg.room) {
+    } else if (['host_page_changed', 'move_made', 'game_over', 'coop_game_started'].includes(msg.type) && msg.room) {
       msg.room.updatedAt = Date.now();
       this.localFallbackRooms.set(msg.room.roomId, msg.room);
       this._saveRoomsToLocalStorage();
