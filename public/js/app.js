@@ -1,10 +1,9 @@
 /**
- * Main Application Controller - Cờ Caro Vở Ô Ly Việt Nam
- * Kết nối:
- * - Giao diện Trang Vở Ô Ly 200 Trang (NotebookBoardRenderer + NotebookStore)
- * - Chế độ PvE (10 cấp độ khó từ Tập Sự đến Cờ Thánh qua Web Worker)
- * - Chế độ PvP Local (2-4 người chung màn hình)
- * - Chế độ PvP Co-op Online (1v1, Chia Phe Đội X/O, Hỗn Chiến 2-4 người qua WebSocket)
+ * Main Application Controller - Cờ Caro Vở Ô Ly Việt Nam (Phiên bản Giao diện Tối Giản Đa Màn Hình)
+ * - Tách riêng 5 màn hình: Menu Chính | Sảnh Co-op | Lịch Sử 200 Trang | Cài Đặt | Trang Vở Gameplay
+ * - Chế độ Co-op Online: Tất cả người chơi cùng đại chiến trên trang vở của Chủ Phòng;
+ *   Chủ Phòng có thể chọn bất kỳ trang nào (1 -> 200) từ quyển vở của mình trước khi bắt đầu ván cờ.
+ * - Hỗ trợ Responsive & Thu phóng (Zoom) mượt mà trên PC, Tablet và Điện thoại.
  */
 
 import {
@@ -31,18 +30,26 @@ class CaroNotebookApp {
     this.sound = new SoundEffectManager();
     this.profile = null;
 
-    // Trạng thái trang vở hiện tại (1 -> 200)
+    this.currentView = 'view-menu';
+
+    // Trang vở cá nhân hiện tại (1 -> 200)
     this.currentPageNumber = 1;
     this.currentPageData = null;
     this.deadSet = new Set();
     this.activeBoard = this._createEmptyBoard();
 
+    // Trạng thái xem trong màn hình Lịch Sử
+    this.historyFilter = 'all';
+    this.historySelectedPage = 1;
+
     // Cấu hình chế độ chơi
     this.mode = 'pve'; // 'pve' | 'pvp-local' | 'pvp-online'
-    this.blockTwoEnds = true; // Luật chặn 2 đầu truyền thống VN
+    this.blockTwoEnds = true;
+    this.showCoordinates = true;
+    this.zoomLevel = 1.0;
 
     // Cấu hình PvE
-    this.aiLevel = 5; // Mặc định Cấp 5: Cờ Thủ Xóm
+    this.aiLevel = 5;
     this.humanSymbol = 'X';
     this.aiSymbol = 'O';
     this.aiThinking = false;
@@ -50,15 +57,13 @@ class CaroNotebookApp {
     this.aiRequestSeq = 0;
 
     // Cấu hình PvP Local
-    this.localPlayerCount = 2; // 2, 3, hoặc 4 người
+    this.localPlayerCount = 2;
 
     // Cấu hình PvP Co-op Online
-    this.onlineSubMode = '1v1'; // '1v1' | 'team' | 'ffa'
+    this.onlineSubMode = '1v1';
     this.mp = null;
 
-    // Trạng thái ván cờ đang diễn ra trên trang hiện tại
     this.turnIndex = 0;
-    this.gameEndedBanner = null;
   }
 
   _createEmptyBoard() {
@@ -69,19 +74,50 @@ class CaroNotebookApp {
     await this.store.init();
     this.profile = this.store.getPlayerProfile();
     this.currentPageNumber = this.profile.currentPage || 1;
+    this.historySelectedPage = this.currentPageNumber;
 
     this._initAIWorker();
     this._initCanvas();
     this._initMultiplayer();
+    this._populateAISelect();
     this._bindUIEvents();
-    this._renderAILevelSelect();
-    this._updateProfileUI();
+    this._syncProfileAndSettingsUI();
 
     await this.loadPage(this.currentPageNumber);
 
     window.addEventListener('resize', () => {
-      if (this.renderer) this.renderer.resize();
+      if (this.currentView === 'view-game' && this.renderer) {
+        this.renderer.resize();
+      }
     });
+  }
+
+  /**
+   * Chuyển đổi giữa 5 màn hình riêng biệt
+   */
+  showScreen(viewId) {
+    this.currentView = viewId;
+    document.querySelectorAll('.screen-view').forEach(sec => {
+      sec.classList.toggle('active', sec.id === viewId);
+    });
+
+    if (viewId === 'view-menu') {
+      this._syncProfileAndSettingsUI();
+    } else if (viewId === 'view-history') {
+      this._renderHistoryView();
+    } else if (viewId === 'view-settings') {
+      this._syncProfileAndSettingsUI();
+    } else if (viewId === 'view-coop-lobby') {
+      this.mp.connect();
+      this.mp.requestRoomList();
+      this._updateCoopCreatePageBadge();
+      this._renderOnlineRoomPanel(this.mp.roomState);
+    } else if (viewId === 'view-game') {
+      setTimeout(() => {
+        this.renderer.resize();
+        this._updateGameplayUI();
+      }, 20);
+    }
   }
 
   _initAIWorker() {
@@ -91,7 +127,7 @@ class CaroNotebookApp {
         const { requestId, move } = e.data;
         if (requestId !== this.aiRequestSeq) return;
         this.aiThinking = false;
-        this._updateStatusUI();
+        this._updateGameplayUI();
         if (move && this.mode === 'pve') {
           this._applyLocalOrPvEMove(move.r, move.c, this.aiSymbol, this._getAILevelTitle(this.aiLevel));
         }
@@ -115,30 +151,32 @@ class CaroNotebookApp {
 
   _initMultiplayer() {
     this.mp = new MultiplayerClient({
-      onConnectionChange: (connected) => {
+      onConnectionChange: (connected, modeType) => {
         const badge = document.getElementById('online-conn-badge');
         if (badge) {
-          badge.textContent = connected ? 'Đã kết nối máy chủ' : 'Mất kết nối';
+          badge.textContent = connected
+            ? modeType === 'local-channel'
+              ? 'Đã kết nối (Đa Tab)'
+              : 'Đã kết nối Server'
+            : 'Mất kết nối';
           badge.className = `conn-badge ${connected ? 'connected' : 'disconnected'}`;
         }
       },
-      onLatencyUpdate: (ms, stats) => {
+      onLatencyUpdate: (ms) => {
         const pingEl = document.getElementById('ping-value');
-        if (pingEl) {
-          pingEl.textContent = `${ms} ms`;
-          pingEl.className = ms < 150 ? 'ping-good' : ms < 500 ? 'ping-warn' : 'ping-bad';
-        }
-        if (stats) this._updateServerStatsUI(stats);
-      },
-      onServerStats: (stats) => {
-        if (stats) this._updateServerStatsUI(stats);
+        if (pingEl) pingEl.textContent = `${ms} ms`;
       },
       onRoomList: (rooms, stats) => {
-        if (stats) this._updateServerStatsUI(stats);
+        const countEl = document.getElementById('server-room-count');
+        if (countEl && stats) countEl.textContent = stats.roomCount || rooms.length;
         this._renderPublicRoomList(rooms);
       },
       onRoomState: (room) => {
         this._syncFromOnlineRoom(room);
+      },
+      onHostPageChanged: (msg) => {
+        this.sound.playPageFlip();
+        this._showToast(`Chủ phòng (${msg.hostName}) đã chọn Trang ${msg.pageNumber} làm chiến trường!`, 'info');
       },
       onMoveMade: (move, room) => {
         this.sound.playPenStroke(move.symbol);
@@ -157,15 +195,12 @@ class CaroNotebookApp {
     });
   }
 
-  _updateServerStatsUI(stats) {
-    const ccuEl = document.getElementById('server-ccu-count');
-    if (ccuEl && stats.onlineCount !== undefined) {
-      ccuEl.textContent = `${stats.onlineCount.toLocaleString('vi-VN')} / 10,000`;
-    }
-    const roomsEl = document.getElementById('server-room-count');
-    if (roomsEl && stats.roomCount !== undefined) {
-      roomsEl.textContent = stats.roomCount;
-    }
+  _populateAISelect() {
+    const sel = document.getElementById('select-ai-level');
+    if (!sel) return;
+    sel.innerHTML = AI_LEVELS.map(
+      item => `<option value="${item.level}" ${item.level === this.aiLevel ? 'selected' : ''}>${item.title} — ${item.subtitle}</option>`
+    ).join('');
   }
 
   async loadPage(pageNumber) {
@@ -177,13 +212,11 @@ class CaroNotebookApp {
     this.currentPageData = await this.store.getPage(target);
     this.aiRequestSeq++;
     this.aiThinking = false;
-    this.gameEndedBanner = null;
     this._hideEndBanner();
 
     this._rebuildBoardStateFromPage();
-    this._updateNotebookNavigationUI();
-    this._updateStatusUI();
-    this._renderArchivedListOnPage();
+    this._updateGameplayUI();
+    this._syncProfileAndSettingsUI();
   }
 
   _rebuildBoardStateFromPage() {
@@ -209,11 +242,17 @@ class CaroNotebookApp {
     const activeSymbols = this._getActiveSymbolsForCurrentMode();
     this.turnIndex = moves.length % activeSymbols.length;
 
+    const ownerTitle = this.mode === 'pvp-online' && this.mp?.roomState
+      ? `Vở của ${this.mp.roomState.hostName}`
+      : `Vở của ${this.profile.name}`;
+
     this.renderer.setState({
       pageData: this.currentPageData,
       activeBoard: this.activeBoard,
       deadSet: this.deadSet,
-      currentTurnSymbol: this.getCurrentTurnSymbol()
+      currentTurnSymbol: this.getCurrentTurnSymbol(),
+      ownerTitle,
+      showCoordinates: this.showCoordinates
     });
   }
 
@@ -228,12 +267,8 @@ class CaroNotebookApp {
   }
 
   _getActiveSymbolsForCurrentMode() {
-    if (this.mode === 'pve') {
-      return ['X', 'O'];
-    }
-    if (this.mode === 'pvp-local') {
-      return SYMBOLS.slice(0, this.localPlayerCount);
-    }
+    if (this.mode === 'pve') return ['X', 'O'];
+    if (this.mode === 'pvp-local') return SYMBOLS.slice(0, this.localPlayerCount);
     if (this.mode === 'pvp-online' && this.mp?.roomState) {
       return this.mp.roomState.activeSymbols || ['X', 'O'];
     }
@@ -249,46 +284,38 @@ class CaroNotebookApp {
   }
 
   /**
-   * Xử lý khi người chơi click vào ô (r, c) trên trang vở ô ly
+   * Xử lý khi chấm bút lên ô (r, c) của trang vở ô ly
    */
   async handleBoardClick(r, c) {
     const key = cellKey(r, c);
 
-    // 1. Kiểm tra ô có nằm trong vùng khoanh "Điểm chết" của các ván cờ cũ không
     if (this.deadSet.has(key)) {
-      this._showToast('Ô này nằm trong vùng khoanh của ván cờ cũ (Điểm chết), không thể đánh đè lên!', 'warn');
+      this._showToast('Ô này thuộc vùng khoanh Điểm Chết của ván cờ cũ, không thể đánh đè lên!', 'warn');
       return;
     }
 
-    // 2. Kiểm tra ô đã có quân trong ván hiện tại chưa
-    if (this.activeBoard[r][c] !== null) {
-      return;
-    }
+    if (this.activeBoard[r][c] !== null) return;
 
-    // 3. Nếu đang ở chế độ PvP Co-op Online
     if (this.mode === 'pvp-online') {
       if (!this.mp.roomState) {
-        this._showToast('Hãy Tạo Phòng hoặc Ghép Trận Nhanh ở bảng bên phải để bắt đầu!', 'warn');
+        this._showToast('Bạn chưa ở trong phòng Co-op!', 'warn');
         return;
       }
       this.mp.sendMove(r, c);
       return;
     }
 
-    // 4. Nếu đang ở chế độ PvE
     if (this.mode === 'pve') {
       if (this.aiThinking) return;
-      const currentSym = this.getCurrentTurnSymbol();
-      if (currentSym !== this.humanSymbol) return;
+      if (this.getCurrentTurnSymbol() !== this.humanSymbol) return;
 
-      const gameEnded = await this._applyLocalOrPvEMove(r, c, this.humanSymbol, this.profile.name);
-      if (!gameEnded) {
+      const ended = await this._applyLocalOrPvEMove(r, c, this.humanSymbol, this.profile.name);
+      if (!ended) {
         this._triggerAIMove();
       }
       return;
     }
 
-    // 5. Nếu đang ở chế độ PvP Local (Chung màn hình)
     if (this.mode === 'pvp-local') {
       const sym = this.getCurrentTurnSymbol();
       await this._applyLocalOrPvEMove(r, c, sym, `Người chơi ${sym}`);
@@ -296,9 +323,7 @@ class CaroNotebookApp {
   }
 
   async _applyLocalOrPvEMove(r, c, symbol, playerName) {
-    if (this.deadSet.has(cellKey(r, c)) || this.activeBoard[r][c] !== null) {
-      return false;
-    }
+    if (this.deadSet.has(cellKey(r, c)) || this.activeBoard[r][c] !== null) return false;
 
     this._hideEndBanner();
     this.activeBoard[r][c] = symbol;
@@ -320,7 +345,6 @@ class CaroNotebookApp {
     const symbols = this._getActiveSymbolsForCurrentMode();
     this.turnIndex = moves.length % symbols.length;
 
-    // Kiểm tra chiến thắng
     const winCheck = checkWinAt(this.activeBoard, r, c, {
       blockTwoEnds: this.blockTwoEnds,
       deadSet: this.deadSet,
@@ -337,7 +361,6 @@ class CaroNotebookApp {
       return true;
     }
 
-    // Kiểm tra Hòa (Hết ô trống ngoài vùng điểm chết)
     const remainingCells = countPlayableCells(this.activeBoard, this.deadSet, BOARD_ROWS, BOARD_COLS);
     if (remainingCells === 0) {
       await this._finalizeAndFenceCurrentGame({
@@ -355,15 +378,10 @@ class CaroNotebookApp {
       deadSet: this.deadSet,
       currentTurnSymbol: this.getCurrentTurnSymbol()
     });
-    this._updateStatusUI();
-    this._updateNotebookNavigationUI();
+    this._updateGameplayUI();
     return false;
   }
 
-  /**
-   * Khoanh vùng thế cờ vừa kết thúc bằng đường viền bút bi bo sát (Polygonal Contour)
-   * và biến toàn bộ vùng đó thành Điểm Chết trên trang vở hiện tại.
-   */
   async _finalizeAndFenceCurrentGame({ winnerSymbol, winnerName, winLine }) {
     const activeGame = this.currentPageData.activeGame;
     if (!activeGame || !activeGame.moves || activeGame.moves.length === 0) return;
@@ -378,11 +396,9 @@ class CaroNotebookApp {
     const gameNumber = (this.currentPageData.archivedGames?.length || 0) + 1;
     const modeLabel = this.mode === 'pve'
       ? `PvE (${this._getAILevelTitle(this.aiLevel)})`
-      : this.mode === 'pvp-local'
-        ? `PvP Chung màn hình (${this.localPlayerCount} người)`
-        : `PvP Co-op Online`;
+      : `PvP Chung màn (${this.localPlayerCount} người)`;
 
-    const archivedRecord = {
+    this.currentPageData.archivedGames.push({
       id: activeGame.id || `archived_${Date.now()}`,
       gameIndexOnPage: gameNumber,
       mode: this.mode,
@@ -395,12 +411,10 @@ class CaroNotebookApp {
       deadCells,
       contours,
       finishedAt: Date.now()
-    };
+    });
 
-    this.currentPageData.archivedGames.push(archivedRecord);
     this.currentPageData.activeGame = this._createNewActiveGameObj();
 
-    // Cập nhật thống kê học sinh
     if (this.mode === 'pve') {
       if (winnerSymbol === this.humanSymbol) {
         this.profile.stats.wins = (this.profile.stats.wins || 0) + 1;
@@ -413,34 +427,35 @@ class CaroNotebookApp {
         this.profile.stats.draws = (this.profile.stats.draws || 0) + 1;
       }
       this.store.savePlayerProfile(this.profile);
-      this._updateProfileUI();
     }
 
     await this.store.savePage(this.currentPageData);
     this.sound.playFenceDraw();
 
     this._rebuildBoardStateFromPage();
-    this._updateNotebookNavigationUI();
-    this._updateStatusUI();
-    this._renderArchivedListOnPage();
+    this._updateGameplayUI();
 
     const bannerTitle = winnerSymbol === 'DRAW'
       ? `Ván #${gameNumber} Hòa Cờ!`
-      : `Ván #${gameNumber}: ${winnerName} (${winnerSymbol}) Chiến Thắng!`;
+      : `Ván #${gameNumber}: ${winnerName} (${winnerSymbol}) Thắng!`;
 
     this._showEndBanner(
       bannerTitle,
-      `Thế cờ vừa được khoanh viền bút bi (${deadCells.length} ô đã thành điểm chết). Bạn có thể đánh tiếp ván mới ngay trên phần trống của Trang ${this.currentPageNumber}!`
+      `Đã khoanh viền điểm chết (${deadCells.length} ô). Chấm vào phần giấy trống còn lại để đánh tiếp ván mới!`
     );
+
+    // Nếu người chơi cầm O (Đi sau) trong chế độ PvE, máy tự động khai cuộc ván tiếp theo
+    if (this.mode === 'pve' && this.humanSymbol === 'O') {
+      this._triggerAIMove();
+    }
   }
 
   _triggerAIMove() {
     if (this.mode !== 'pve') return;
-    const currentSym = this.getCurrentTurnSymbol();
-    if (currentSym !== this.aiSymbol) return;
+    if (this.getCurrentTurnSymbol() !== this.aiSymbol) return;
 
     this.aiThinking = true;
-    this._updateStatusUI();
+    this._updateGameplayUI();
     const reqId = ++this.aiRequestSeq;
     const deadCellsArr = Array.from(this.deadSet);
 
@@ -466,7 +481,7 @@ class CaroNotebookApp {
           this.blockTwoEnds
         );
         this.aiThinking = false;
-        this._updateStatusUI();
+        this._updateGameplayUI();
         if (move) {
           this._applyLocalOrPvEMove(move.r, move.c, this.aiSymbol, this._getAILevelTitle(this.aiLevel));
         }
@@ -475,58 +490,87 @@ class CaroNotebookApp {
   }
 
   /**
-   * Đồng bộ trạng thái trang vở từ Phòng Chơi Online
+   * Đồng bộ trạng thái khi đánh trên Trang Vở Ô Ly của Chủ Phòng (Co-op Mode)
    */
   async _syncFromOnlineRoom(room, gameOverResult = null) {
     if (!room) return;
 
+    this.mode = 'pvp-online';
     this.blockTwoEnds = room.blockTwoEnds;
-    const blockCheckbox = document.getElementById('toggle-block-two-ends');
-    if (blockCheckbox) blockCheckbox.checked = this.blockTwoEnds;
 
-    // Đồng bộ danh sách các ván đã khoanh vùng (Điểm chết) trên trang của phòng
-    this.currentPageData.archivedGames = room.archivedGames || [];
-    this.currentPageData.activeGame = {
-      id: room.activeGameId || 'online_game',
-      mode: 'pvp-online',
-      blockTwoEnds: room.blockTwoEnds,
-      moves: room.moves || [],
-      winLine: room.winLine || null,
-      winnerSymbol: room.winnerSymbol || null
+    const hostPageNum = room.hostPageNumber || 1;
+    const isHost = this.mp.isHost();
+
+    // Dựng đối tượng trang vở của Chủ Phòng để hiển thị giống hệt trên máy mọi người chơi
+    this.currentPageNumber = hostPageNum;
+    this.currentPageData = {
+      pageNumber: hostPageNum,
+      dateHeader: room.hostDateHeader || this.store.formatVietnameseDate(),
+      archivedGames: room.archivedGames || [],
+      activeGame: {
+        id: room.activeGameId || 'online_game',
+        mode: 'pvp-online',
+        blockTwoEnds: room.blockTwoEnds,
+        moves: room.moves || []
+      }
     };
 
-    await this.store.savePage(this.currentPageData);
+    // Nếu bạn chính là Chủ Phòng, lưu lại tiến độ trang vở này vào đúng quyển vở 200 trang của bạn!
+    if (isHost) {
+      await this.store.savePage(this.currentPageData);
+    }
+
     this._rebuildBoardStateFromPage();
     this._renderOnlineRoomPanel(room);
-    this._renderArchivedListOnPage();
-    this._updateNotebookNavigationUI();
-    this._updateStatusUI();
+    this._updateGameplayUI();
 
     if (gameOverResult) {
       const title = gameOverResult.winnerSymbol === 'DRAW'
-        ? 'Ván Online Hòa Cờ!'
-        : `Phe ${gameOverResult.winnerSymbol} (${gameOverResult.winnerName}) Chiến Thắng!`;
+        ? 'Ván Co-op Hòa Cờ!'
+        : `Phe ${gameOverResult.winnerSymbol} (${gameOverResult.winnerName}) Thắng!`;
       this._showEndBanner(
         title,
-        'Thế cờ đã được tự động khoanh vùng điểm chết trên trang vở của tất cả người chơi trong phòng. Bấm vào ô trống bất kỳ để đánh tiếp ván mới!'
+        `Thế cờ đã được khoanh vào Trang ${hostPageNum} trong vở của Chủ Phòng (${room.hostName}). Chấm vào ô trống để đánh tiếp!`
       );
     }
   }
 
   /**
-   * Khoanh vùng ván đang đánh dở theo yêu cầu của người chơi (nếu có ít nhất 1 nước đi)
+   * Chủ phòng chọn 1 trang từ quyển vở 200 trang của mình để tất cả người chơi cùng đại chiến
    */
+  async hostApplyPageForRoom(pageNumber) {
+    if (!this.mp.isHost()) {
+      this._showToast('Chỉ Chủ Phòng mới có thể đổi trang vở đại chiến!', 'warn');
+      return;
+    }
+    if ((this.mp.roomState?.moves?.length || 0) > 0) {
+      this._showToast('Đang có ván đánh dở! Hãy bấm "Khoanh ván" trước khi lật sang trang vở khác.', 'warn');
+      return;
+    }
+
+    const safePage = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(pageNumber) || 1));
+    const hostPageData = await this.store.getPage(safePage);
+
+    this.mp.selectHostPage({
+      pageNumber: safePage,
+      dateHeader: hostPageData.dateHeader,
+      archivedGames: hostPageData.archivedGames || []
+    });
+  }
+
   async manualFenceCurrentGame() {
     if (this.mode === 'pvp-online') {
-      if (this.mp?.roomState) {
-        this.mp.sendNewGameOnSamePage(this.currentPageData.archivedGames);
+      if (!this.mp.isHost()) {
+        this._showToast('Trong phòng Co-op, chỉ Chủ Phòng mới có quyền khoanh sớm ván cờ!', 'warn');
+        return;
       }
+      this.mp.sendNewGameOnSamePage();
       return;
     }
 
     const moves = this.currentPageData?.activeGame?.moves || [];
     if (moves.length === 0) {
-      this._showToast('Chưa có nước cờ nào trong ván hiện tại để khoanh vùng!', 'warn');
+      this._showToast('Chưa có nước cờ nào để khoanh vùng!', 'warn');
       return;
     }
 
@@ -537,19 +581,14 @@ class CaroNotebookApp {
     });
   }
 
-  /**
-   * Đi lại 1 lượt (Undo) cho chế độ PvE hoặc PvP Local
-   */
   async undoLastMove() {
     if (this.mode === 'pvp-online') {
-      this._showToast('Chế độ Online không hỗ trợ tự ý tẩy nước đi!', 'warn');
+      this._showToast('Chế độ Co-op Online không cho phép tự ý tẩy nước đi!', 'warn');
       return;
     }
+
     const moves = this.currentPageData?.activeGame?.moves || [];
-    if (moves.length === 0) {
-      this._showToast('Không có nước đi nào để quay lại!', 'warn');
-      return;
-    }
+    if (moves.length === 0) return;
 
     this.aiRequestSeq++;
     this.aiThinking = false;
@@ -563,7 +602,7 @@ class CaroNotebookApp {
 
     await this.store.savePage(this.currentPageData);
     this._rebuildBoardStateFromPage();
-    this._updateStatusUI();
+    this._updateGameplayUI();
   }
 
   _getAILevelTitle(level) {
@@ -572,129 +611,238 @@ class CaroNotebookApp {
   }
 
   _bindUIEvents() {
-    // Chuyển chế độ chơi (PvE / PvP Local / PvP Online)
-    document.querySelectorAll('.mode-tab-btn').forEach(btn => {
+    // Các nút quay lại
+    document.querySelectorAll('.btn-back').forEach(btn => {
       btn.addEventListener('click', () => {
-        const selectedMode = btn.dataset.mode;
-        this.switchMode(selectedMode);
+        this.showScreen(btn.dataset.target || 'view-menu');
       });
     });
 
-    // Luật chặn 2 đầu
-    const blockToggle = document.getElementById('toggle-block-two-ends');
-    if (blockToggle) {
-      blockToggle.addEventListener('change', (e) => {
-        this.blockTwoEnds = e.target.checked;
-        this._updateStatusUI();
-      });
-    }
+    // Menu chính: Chọn cấp độ AI và màu bút
+    document.getElementById('select-ai-level')?.addEventListener('change', (e) => {
+      this.aiLevel = Number(e.target.value) || 5;
+    });
 
-    // Chọn quân đi trước trong PvE
     document.querySelectorAll('input[name="pve-side"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
         this.humanSymbol = e.target.value;
         this.aiSymbol = this.humanSymbol === 'X' ? 'O' : 'X';
-        if (this.mode === 'pve' && (this.currentPageData?.activeGame?.moves?.length || 0) === 0) {
-          this.turnIndex = 0;
-          if (this.humanSymbol === 'O') {
-            this._triggerAIMove();
-          }
-        }
-        this._updateStatusUI();
       });
     });
 
-    // Chọn số người chơi PvP Local
-    document.querySelectorAll('.local-count-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.local-count-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.localPlayerCount = Number(btn.dataset.count) || 2;
-        this._rebuildBoardStateFromPage();
-        this._updateStatusUI();
-      });
+    // Menu chính: Vào chơi PvE
+    document.getElementById('btn-start-pve')?.addEventListener('click', async () => {
+      this.mode = 'pve';
+      await this.loadPage(this.currentPageNumber);
+      this.showScreen('view-game');
+      if (this.getCurrentTurnSymbol() === this.aiSymbol) {
+        this._triggerAIMove();
+      }
     });
 
-    // Điều hướng trang vở 1 -> 200
+    // Menu chính: Vào chơi PvP Local
+    document.getElementById('btn-start-local')?.addEventListener('click', async () => {
+      this.mode = 'pvp-local';
+      await this.loadPage(this.currentPageNumber);
+      this.showScreen('view-game');
+    });
+
+    // Menu chính: Mở Sảnh Co-op, Lịch Sử 200 Trang, Cài Đặt
+    document.getElementById('btn-open-coop')?.addEventListener('click', () => {
+      this.showScreen('view-coop-lobby');
+    });
+    document.getElementById('btn-goto-history')?.addEventListener('click', () => {
+      this.historySelectedPage = this.currentPageNumber;
+      this.showScreen('view-history');
+    });
+    document.getElementById('btn-goto-settings')?.addEventListener('click', () => {
+      this.showScreen('view-settings');
+    });
+
+    // Gameplay Topbar: Nút quay lại
+    document.getElementById('btn-game-back')?.addEventListener('click', () => {
+      if (this.mode === 'pvp-online' && this.mp?.roomState) {
+        this.showScreen('view-coop-lobby');
+      } else {
+        this.showScreen('view-menu');
+      }
+    });
+
+    // Gameplay Topbar: Điều hướng trang vở (hoặc Chủ Phòng đổi trang trước ván)
     document.getElementById('btn-prev-page')?.addEventListener('click', () => {
-      if (this.currentPageNumber > 1) {
-        this.sound.playPageFlip();
-        this.loadPage(this.currentPageNumber - 1);
-      }
+      this._stepNotebookPage(-1);
     });
-
     document.getElementById('btn-next-page')?.addEventListener('click', () => {
-      if (this.currentPageNumber < TOTAL_NOTEBOOK_PAGES) {
+      this._stepNotebookPage(1);
+    });
+    document.getElementById('page-jump-input')?.addEventListener('change', (e) => {
+      const target = Number(e.target.value);
+      if (this.mode === 'pvp-online') {
+        this.hostApplyPageForRoom(target);
+      } else if (target >= 1 && target <= TOTAL_NOTEBOOK_PAGES) {
         this.sound.playPageFlip();
-        this.loadPage(this.currentPageNumber + 1);
+        this.loadPage(target);
       }
     });
 
-    const pageInput = document.getElementById('page-jump-input');
-    if (pageInput) {
-      pageInput.addEventListener('change', (e) => {
-        const val = Number(e.target.value);
-        if (val >= 1 && val <= TOTAL_NOTEBOOK_PAGES) {
-          this.sound.playPageFlip();
-          this.loadPage(val);
-        } else {
-          e.target.value = this.currentPageNumber;
-        }
-      });
-    }
-
-    // Mở Modal Mục lục 200 trang
-    document.getElementById('btn-open-index')?.addEventListener('click', () => {
-      this._openNotebookIndexModal();
+    // Gameplay Topbar: Thu phóng (Zoom) cho đa thiết bị
+    document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
+      this.zoomLevel = Math.min(1.75, +(this.zoomLevel + 0.15).toFixed(2));
+      this.renderer.setZoom(this.zoomLevel);
     });
-    document.getElementById('btn-close-index-modal')?.addEventListener('click', () => {
-      document.getElementById('notebook-index-modal')?.classList.add('hidden');
+    document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
+      this.zoomLevel = Math.max(0.75, +(this.zoomLevel - 0.15).toFixed(2));
+      this.renderer.setZoom(this.zoomLevel);
     });
 
-    // Các nút thao tác trên trang vở
     document.getElementById('btn-fence-now')?.addEventListener('click', () => {
       this.manualFenceCurrentGame();
     });
-
     document.getElementById('btn-undo-move')?.addEventListener('click', () => {
       this.undoLastMove();
     });
+    document.getElementById('btn-toggle-coop-drawer')?.addEventListener('click', () => {
+      this.showScreen('view-coop-lobby');
+    });
+    document.getElementById('btn-dismiss-banner')?.addEventListener('click', () => {
+      this._hideEndBanner();
+    });
 
-    document.getElementById('btn-clear-page')?.addEventListener('click', async () => {
-      if (this.mode === 'pvp-online' && this.mp?.roomState) {
-        this._showToast('Hãy rời phòng Online trước khi tẩy trắng trang vở!', 'warn');
+    // Sảnh Co-op Online
+    document.querySelectorAll('.online-submode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.online-submode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.onlineSubMode = btn.dataset.submode;
+      });
+    });
+
+    const coopCreatePageInput = document.getElementById('coop-create-page-select');
+    if (coopCreatePageInput) {
+      coopCreatePageInput.value = this.currentPageNumber;
+      coopCreatePageInput.addEventListener('change', () => {
+        this._updateCoopCreatePageBadge();
+      });
+    }
+
+    document.getElementById('btn-create-room')?.addEventListener('click', async () => {
+      const pageNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(coopCreatePageInput?.value) || this.currentPageNumber));
+      const hostPage = await this.store.getPage(pageNum);
+      this.mp.createRoom({
+        playerName: this.profile.name,
+        subMode: this.onlineSubMode,
+        blockTwoEnds: this.blockTwoEnds,
+        pageNumber: pageNum,
+        dateHeader: hostPage.dateHeader,
+        archivedGames: hostPage.archivedGames || []
+      });
+    });
+
+    document.getElementById('btn-quick-match')?.addEventListener('click', async () => {
+      const pageNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(coopCreatePageInput?.value) || this.currentPageNumber));
+      const hostPage = await this.store.getPage(pageNum);
+      this.mp.quickMatch({
+        playerName: this.profile.name,
+        subMode: this.onlineSubMode,
+        blockTwoEnds: this.blockTwoEnds,
+        pageNumber: pageNum,
+        dateHeader: hostPage.dateHeader,
+        archivedGames: hostPage.archivedGames || []
+      });
+    });
+
+    document.getElementById('btn-join-room')?.addEventListener('click', () => {
+      const code = document.getElementById('input-room-code')?.value?.trim();
+      if (!code) {
+        this._showToast('Vui lòng nhập Mã Phòng!', 'warn');
         return;
       }
-      if (confirm(`Bạn có chắc muốn lấy tẩy xóa sạch toàn bộ các ván cờ trên Trang ${this.currentPageNumber} không?`)) {
-        await this.store.clearPage(this.currentPageNumber);
-        await this.loadPage(this.currentPageNumber);
-        this._showToast(`Đã tẩy trắng Trang ${this.currentPageNumber}!`, 'info');
+      this.mp.joinRoom({
+        roomId: code,
+        playerName: this.profile.name
+      });
+    });
+
+    document.getElementById('btn-refresh-rooms')?.addEventListener('click', () => {
+      this.mp.requestRoomList();
+    });
+
+    document.getElementById('btn-enter-coop-board')?.addEventListener('click', () => {
+      this.mode = 'pvp-online';
+      this.showScreen('view-game');
+    });
+
+    document.getElementById('btn-leave-room')?.addEventListener('click', () => {
+      this.mp.leaveRoom();
+      this._renderOnlineRoomPanel(null);
+      this._showToast('Đã rời phòng Co-op.', 'info');
+    });
+
+    // Quyền Chủ Phòng chọn trang vở trong Phòng Chờ Co-op
+    const hostRoomPageInput = document.getElementById('input-host-room-page');
+    document.getElementById('btn-host-prev-page')?.addEventListener('click', () => {
+      if (!hostRoomPageInput) return;
+      const nextVal = Math.max(1, (Number(hostRoomPageInput.value) || 1) - 1);
+      hostRoomPageInput.value = nextVal;
+      this.hostApplyPageForRoom(nextVal);
+    });
+    document.getElementById('btn-host-next-page')?.addEventListener('click', () => {
+      if (!hostRoomPageInput) return;
+      const nextVal = Math.min(TOTAL_NOTEBOOK_PAGES, (Number(hostRoomPageInput.value) || 1) + 1);
+      hostRoomPageInput.value = nextVal;
+      this.hostApplyPageForRoom(nextVal);
+    });
+    document.getElementById('btn-host-apply-page')?.addEventListener('click', () => {
+      if (!hostRoomPageInput) return;
+      this.hostApplyPageForRoom(Number(hostRoomPageInput.value) || 1);
+    });
+
+    document.getElementById('coop-host-block-toggle')?.addEventListener('change', (e) => {
+      if (this.mp.isHost()) {
+        this.mp.updateRoomSettings({ blockTwoEnds: e.target.checked });
       }
     });
 
-    // Âm thanh
-    const soundBtn = document.getElementById('btn-toggle-sound');
-    if (soundBtn) {
-      soundBtn.addEventListener('click', () => {
-        const enabled = this.sound.toggle();
-        soundBtn.textContent = enabled ? '🔊 Âm thanh: Bật' : '🔇 Âm thanh: Tắt';
+    document.getElementById('btn-send-chat')?.addEventListener('click', () => {
+      this._sendCurrentChatInput();
+    });
+    document.getElementById('input-chat-msg')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._sendCurrentChatInput();
+    });
+    document.querySelectorAll('.quick-chat-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        this.mp.sendChat(chip.dataset.msg);
       });
-    }
+    });
 
-    // Lưu tên học sinh trên nhãn vở
-    const nameInput = document.getElementById('student-name-input');
-    if (nameInput) {
-      nameInput.addEventListener('change', (e) => {
-        const val = e.target.value.trim();
-        if (val) {
-          this.profile.name = val;
-          this.store.savePlayerProfile(this.profile);
-          this._showToast(`Đã ghi tên "${val}" lên nhãn vở!`, 'info');
+    // Trang Lịch Sử 200 Trang
+    document.querySelectorAll('.history-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.history-filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.historyFilter = btn.dataset.filter || 'all';
+        this._renderHistoryView();
+      });
+    });
+
+    document.getElementById('btn-history-play-page')?.addEventListener('click', async () => {
+      this.sound.playPageFlip();
+      await this.loadPage(this.historySelectedPage);
+      if (this.mode === 'pvp-online') this.mode = 'pve';
+      this.showScreen('view-game');
+    });
+
+    document.getElementById('btn-history-clear-page')?.addEventListener('click', async () => {
+      if (confirm(`Bạn có chắc muốn dùng tẩy xóa sạch toàn bộ các ván cờ trên Trang ${this.historySelectedPage} không?`)) {
+        await this.store.clearPage(this.historySelectedPage);
+        if (this.currentPageNumber === this.historySelectedPage) {
+          await this.loadPage(this.historySelectedPage);
         }
-      });
-    }
+        await this._renderHistoryView();
+        this._showToast(`Đã tẩy trắng Trang ${this.historySelectedPage}!`, 'info');
+      }
+    });
 
-    // Xuất / Nhập quyển vở 200 trang
     document.getElementById('btn-export-notebook')?.addEventListener('click', () => {
       const json = this.store.exportNotebookJSON();
       const blob = new Blob([json], { type: 'application/json' });
@@ -717,162 +865,169 @@ class CaroNotebookApp {
         const text = await file.text();
         await this.store.importNotebookJSON(text);
         this.profile = this.store.getPlayerProfile();
-        this._updateProfileUI();
         await this.loadPage(this.currentPageNumber);
-        this._showToast('Đã nạp quyển vở 200 trang thành công!', 'info');
+        await this._renderHistoryView();
+        this._showToast('Đã nhập quyển vở 200 trang thành công!', 'info');
       } catch (err) {
-        this._showToast(err.message || 'Lỗi đọc file quyển vở!', 'error');
+        this._showToast(err.message || 'File không hợp lệ!', 'error');
       }
     });
 
-    // Sự kiện PvP Co-op Online
-    document.querySelectorAll('.online-submode-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.online-submode-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.onlineSubMode = btn.dataset.submode;
-      });
-    });
+    // Trang Cài Đặt
+    document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+      const nameVal = document.getElementById('student-name-input')?.value?.trim();
+      const schoolVal = document.getElementById('student-school-input')?.value?.trim();
+      const classVal = document.getElementById('student-class-input')?.value?.trim();
+      const localCountVal = Number(document.getElementById('setting-local-count')?.value) || 2;
+      const blockVal = Boolean(document.getElementById('toggle-block-two-ends')?.checked);
+      const soundVal = Boolean(document.getElementById('toggle-sound-setting')?.checked);
+      const coordsVal = Boolean(document.getElementById('toggle-coords-setting')?.checked);
+      const wsUrlVal = document.getElementById('input-custom-ws')?.value?.trim() || '';
 
-    document.getElementById('btn-create-room')?.addEventListener('click', () => {
-      this.mp.createRoom({
-        playerName: this.profile.name,
-        subMode: this.onlineSubMode,
-        blockTwoEnds: this.blockTwoEnds,
-        archivedGames: this.currentPageData.archivedGames || []
-      });
-    });
+      if (nameVal) this.profile.name = nameVal;
+      if (schoolVal) this.profile.school = schoolVal;
+      if (classVal) this.profile.className = classVal;
+      this.store.savePlayerProfile(this.profile);
 
-    document.getElementById('btn-quick-match')?.addEventListener('click', () => {
-      this.mp.quickMatch({
-        playerName: this.profile.name,
-        subMode: this.onlineSubMode,
-        blockTwoEnds: this.blockTwoEnds,
-        archivedGames: this.currentPageData.archivedGames || []
-      });
-    });
+      this.localPlayerCount = localCountVal;
+      this.blockTwoEnds = blockVal;
+      this.sound.enabled = soundVal;
+      this.showCoordinates = coordsVal;
+      this.mp.setCustomWsUrl(wsUrlVal);
 
-    document.getElementById('btn-join-room')?.addEventListener('click', () => {
-      const code = document.getElementById('input-room-code')?.value?.trim();
-      if (!code) {
-        this._showToast('Vui lòng nhập Mã Phòng!', 'warn');
-        return;
-      }
-      this.mp.joinRoom({
-        roomId: code,
-        playerName: this.profile.name
-      });
-    });
-
-    document.getElementById('btn-refresh-rooms')?.addEventListener('click', () => {
-      this.mp.requestRoomList();
-    });
-
-    document.getElementById('btn-leave-room')?.addEventListener('click', () => {
-      this.mp.leaveRoom();
-      this._renderOnlineRoomPanel(null);
-      this._showToast('Đã rời phòng đấu Online.', 'info');
-    });
-
-    document.getElementById('btn-send-chat')?.addEventListener('click', () => {
-      this._sendCurrentChatInput();
-    });
-
-    document.getElementById('input-chat-msg')?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this._sendCurrentChatInput();
-    });
-
-    document.querySelectorAll('.quick-chat-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        this.mp.sendChat(chip.dataset.msg);
-      });
-    });
-
-    document.getElementById('btn-dismiss-banner')?.addEventListener('click', () => {
-      this._hideEndBanner();
-    });
-  }
-
-  _sendCurrentChatInput() {
-    const input = document.getElementById('input-chat-msg');
-    if (!input || !input.value.trim()) return;
-    this.mp.sendChat(input.value.trim());
-    input.value = '';
-  }
-
-  switchMode(newMode) {
-    if (this.mode === 'pvp-online' && newMode !== 'pvp-online' && this.mp?.roomState) {
-      this.mp.leaveRoom();
-      this._renderOnlineRoomPanel(null);
-    }
-
-    this.mode = newMode;
-    document.querySelectorAll('.mode-tab-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.mode === newMode);
-    });
-
-    document.getElementById('panel-pve')?.classList.toggle('hidden', newMode !== 'pve');
-    document.getElementById('panel-pvp-local')?.classList.toggle('hidden', newMode !== 'pvp-local');
-    document.getElementById('panel-pvp-online')?.classList.toggle('hidden', newMode !== 'pvp-online');
-
-    if (newMode === 'pvp-online') {
-      this.mp.connect();
-      this.mp.requestRoomList();
-    } else {
+      this._syncProfileAndSettingsUI();
       this._rebuildBoardStateFromPage();
-      if (newMode === 'pve' && this.getCurrentTurnSymbol() === this.aiSymbol) {
-        this._triggerAIMove();
+      this._showToast('Đã lưu cài đặt thành công!', 'info');
+      this.showScreen('view-menu');
+    });
+  }
+
+  _stepNotebookPage(delta) {
+    if (this.mode === 'pvp-online') {
+      const curr = this.mp?.roomState?.hostPageNumber || this.currentPageNumber;
+      this.hostApplyPageForRoom(curr + delta);
+      return;
+    }
+
+    const next = this.currentPageNumber + delta;
+    if (next >= 1 && next <= TOTAL_NOTEBOOK_PAGES) {
+      this.sound.playPageFlip();
+      this.loadPage(next);
+    }
+  }
+
+  async _updateCoopCreatePageBadge() {
+    const input = document.getElementById('coop-create-page-select');
+    const badge = document.getElementById('coop-create-page-info');
+    if (!input || !badge) return;
+
+    const pNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(input.value) || 1));
+    const page = await this.store.getPage(pNum);
+    const deadSet = new Set();
+    for (const g of page.archivedGames || []) {
+      for (const k of g.deadCells || []) deadSet.add(k);
+    }
+    const freePct = Math.max(0, Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100));
+    badge.textContent = page.archivedGames.length > 0
+      ? `Đã khoanh ${page.archivedGames.length} ván • Trống ${freePct}%`
+      : 'Giấy trắng (100% trống)';
+  }
+
+  _syncProfileAndSettingsUI() {
+    if (!this.profile) return;
+
+    // Menu chính
+    const mSchool = document.getElementById('menu-label-school');
+    const mClass = document.getElementById('menu-label-class');
+    const mName = document.getElementById('menu-label-name');
+    const mPage = document.getElementById('menu-current-page');
+    const mRule = document.getElementById('menu-rule-indicator');
+
+    if (mSchool) mSchool.textContent = this.profile.school || 'THPT Chuyên Caro Việt Nam';
+    if (mClass) mClass.textContent = this.profile.className || '12A1';
+    if (mName) mName.textContent = this.profile.name || 'Học Sinh';
+    if (mPage) mPage.textContent = `Trang ${this.currentPageNumber} / 200`;
+    if (mRule) mRule.textContent = `Luật chặn 2 đầu: ${this.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
+
+    // Trang cài đặt
+    const sName = document.getElementById('student-name-input');
+    const sSchool = document.getElementById('student-school-input');
+    const sClass = document.getElementById('student-class-input');
+    const sLocal = document.getElementById('setting-local-count');
+    const sBlock = document.getElementById('toggle-block-two-ends');
+    const sSound = document.getElementById('toggle-sound-setting');
+    const sCoords = document.getElementById('toggle-coords-setting');
+    const sWs = document.getElementById('input-custom-ws');
+
+    if (sName) sName.value = this.profile.name || '';
+    if (sSchool) sSchool.value = this.profile.school || '';
+    if (sClass) sClass.value = this.profile.className || '';
+    if (sLocal) sLocal.value = String(this.localPlayerCount);
+    if (sBlock) sBlock.checked = this.blockTwoEnds;
+    if (sSound) sSound.checked = this.sound.enabled;
+    if (sCoords) sCoords.checked = this.showCoordinates;
+    if (sWs && this.mp) sWs.value = this.mp.customWsUrl || '';
+  }
+
+  _updateGameplayUI() {
+    const turnBadge = document.getElementById('current-turn-badge');
+    const modeDesc = document.getElementById('current-mode-desc');
+    const moveCountEl = document.getElementById('current-move-count');
+    const pageInput = document.getElementById('page-jump-input');
+    const ownerPrefix = document.getElementById('topbar-owner-prefix');
+    const prevBtn = document.getElementById('btn-prev-page');
+    const nextBtn = document.getElementById('btn-next-page');
+    const undoBtn = document.getElementById('btn-undo-move');
+    const coopDrawerBtn = document.getElementById('btn-toggle-coop-drawer');
+
+    const sym = this.getCurrentTurnSymbol();
+    const cfg = SYMBOL_CONFIG[sym] || SYMBOL_CONFIG.X;
+
+    if (turnBadge) {
+      if (this.aiThinking) {
+        turnBadge.textContent = `✍️ Máy đang nghĩ...`;
+        turnBadge.style.color = '#b45309';
+      } else {
+        turnBadge.textContent = `Lượt: ${cfg.name}`;
+        turnBadge.style.color = cfg.color;
       }
     }
 
-    this._updateStatusUI();
-  }
-
-  _renderAILevelSelect() {
-    const container = document.getElementById('ai-levels-grid');
-    if (!container) return;
-
-    container.innerHTML = '';
-    for (const item of AI_LEVELS) {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = `ai-level-card ${item.level === this.aiLevel ? 'active' : ''}`;
-      card.innerHTML = `
-        <div class="ai-level-top">
-          <span class="ai-level-num">${item.title}</span>
-          ${item.level === 10 ? '<span class="ai-crown">👑</span>' : ''}
-        </div>
-        <div class="ai-level-sub">${item.subtitle}</div>
-      `;
-      card.addEventListener('click', () => {
-        this.aiLevel = item.level;
-        container.querySelectorAll('.ai-level-card').forEach(c => c.classList.remove('active'));
-        card.classList.add('active');
-        this._updateStatusUI();
-      });
-      container.appendChild(card);
+    if (modeDesc) {
+      if (this.mode === 'pve') {
+        modeDesc.textContent = `${this._getAILevelTitle(this.aiLevel)}`;
+      } else if (this.mode === 'pvp-local') {
+        modeDesc.textContent = `Chung màn (${this.localPlayerCount} người)`;
+      } else if (this.mp?.roomState) {
+        modeDesc.textContent = `Phòng #${this.mp.roomState.roomId}`;
+      }
     }
-  }
 
-  _updateProfileUI() {
-    const nameInput = document.getElementById('student-name-input');
-    if (nameInput) nameInput.value = this.profile.name || '';
+    if (this.mode === 'pvp-online' && this.mp?.roomState) {
+      const room = this.mp.roomState;
+      const isHost = this.mp.isHost();
+      const canChangePage = isHost && (room.moves?.length || 0) === 0;
 
-    const statWins = document.getElementById('stat-wins');
-    const statDraws = document.getElementById('stat-draws');
-    const statBestAi = document.getElementById('stat-best-ai');
-
-    if (statWins) statWins.textContent = this.profile.stats?.wins || 0;
-    if (statDraws) statDraws.textContent = this.profile.stats?.draws || 0;
-    if (statBestAi) {
-      const lv = this.profile.stats?.highestAiBeaten || 0;
-      statBestAi.textContent = lv > 0 ? `Cấp ${lv}` : 'Chưa';
+      if (ownerPrefix) ownerPrefix.textContent = `Vở ${room.hostName} • Trang`;
+      if (pageInput) {
+        pageInput.value = room.hostPageNumber || 1;
+        pageInput.disabled = !canChangePage;
+      }
+      if (prevBtn) prevBtn.disabled = !canChangePage;
+      if (nextBtn) nextBtn.disabled = !canChangePage;
+      if (undoBtn) undoBtn.classList.add('hidden');
+      if (coopDrawerBtn) coopDrawerBtn.classList.remove('hidden');
+    } else {
+      if (ownerPrefix) ownerPrefix.textContent = 'Trang';
+      if (pageInput) {
+        pageInput.value = this.currentPageNumber;
+        pageInput.disabled = false;
+      }
+      if (prevBtn) prevBtn.disabled = false;
+      if (nextBtn) nextBtn.disabled = false;
+      if (undoBtn) undoBtn.classList.remove('hidden');
+      if (coopDrawerBtn) coopDrawerBtn.classList.add('hidden');
     }
-  }
-
-  _updateNotebookNavigationUI() {
-    const pageInput = document.getElementById('page-jump-input');
-    if (pageInput) pageInput.value = this.currentPageNumber;
 
     const totalCells = BOARD_ROWS * BOARD_COLS;
     const activeCount = this.currentPageData?.activeGame?.moves?.length || 0;
@@ -884,110 +1039,99 @@ class CaroNotebookApp {
       const archivedCount = this.currentPageData?.archivedGames?.length || 0;
       pageStatsEl.textContent = `Đã khoanh: ${archivedCount} ván • Điểm chết: ${deadCount} ô • Trống: ${freePercent}%`;
     }
-  }
-
-  _updateStatusUI() {
-    const turnBadge = document.getElementById('current-turn-badge');
-    const modeDesc = document.getElementById('current-mode-desc');
-    const moveCountEl = document.getElementById('current-move-count');
-
-    const sym = this.getCurrentTurnSymbol();
-    const cfg = SYMBOL_CONFIG[sym] || SYMBOL_CONFIG.X;
-
-    if (turnBadge) {
-      if (this.aiThinking) {
-        turnBadge.textContent = `✍️ ${this._getAILevelTitle(this.aiLevel)} đang suy nghĩ...`;
-        turnBadge.style.borderColor = '#d97706';
-        turnBadge.style.color = '#b45309';
-      } else {
-        turnBadge.textContent = `Lượt đi: ${cfg.name}`;
-        turnBadge.style.borderColor = cfg.color;
-        turnBadge.style.color = cfg.color;
-      }
-    }
-
-    if (modeDesc) {
-      const ruleText = this.blockTwoEnds ? 'Chặn 2 đầu: BẬT' : 'Chặn 2 đầu: TẮT';
-      if (this.mode === 'pve') {
-        modeDesc.textContent = `Đấu với Máy • ${this._getAILevelTitle(this.aiLevel)} • ${ruleText}`;
-      } else if (this.mode === 'pvp-local') {
-        modeDesc.textContent = `PvP Chung Màn Hình (${this.localPlayerCount} người) • ${ruleText}`;
-      } else {
-        const roomCode = this.mp?.roomState?.roomId ? `Phòng #${this.mp.roomState.roomId}` : 'Chưa vào phòng';
-        modeDesc.textContent = `PvP Co-op Online (${roomCode}) • ${ruleText}`;
-      }
-    }
 
     if (moveCountEl) {
-      const count = this.currentPageData?.activeGame?.moves?.length || 0;
-      moveCountEl.textContent = `Nước thứ: ${count}`;
+      moveCountEl.textContent = `Nước đi: ${activeCount}`;
     }
 
     if (this.renderer) {
-      this.renderer.setState({
-        currentTurnSymbol: sym
-      });
+      this.renderer.setState({ currentTurnSymbol: sym });
     }
   }
 
-  _renderArchivedListOnPage() {
-    const listEl = document.getElementById('page-archived-games-list');
-    if (!listEl) return;
-
-    const archived = this.currentPageData?.archivedGames || [];
-    if (archived.length === 0) {
-      listEl.innerHTML = `<div class="empty-archived-note">Trang ${this.currentPageNumber} hiện chưa có ván cờ nào bị khoanh vùng điểm chết.</div>`;
-      return;
-    }
-
-    listEl.innerHTML = archived
-      .map((g, idx) => {
-        const timeStr = new Date(g.finishedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-        const resText = g.winnerSymbol === 'DRAW' ? 'Hòa cờ' : `${g.winnerSymbol} thắng (${g.winnerName})`;
-        return `
-          <div class="archived-item">
-            <div class="archived-item-head">
-              <strong>Ván #${idx + 1}: ${resText}</strong>
-              <span>${timeStr}</span>
-            </div>
-            <div class="archived-item-sub">
-              ${g.modeLabel} • ${g.moves?.length || 0} nước • Khoanh ${g.deadCells?.length || 0} ô chết
-            </div>
-          </div>
-        `;
-      })
-      .join('');
-  }
-
-  _openNotebookIndexModal() {
-    const modal = document.getElementById('notebook-index-modal');
-    const grid = document.getElementById('notebook-pages-grid');
-    const summaryEl = document.getElementById('notebook-index-summary');
-    if (!modal || !grid) return;
-
+  /**
+   * Render Trang Lịch Sử & Quyển Vở 200 Trang
+   */
+  async _renderHistoryView() {
     const overview = this.store.getNotebookOverview();
+
+    document.getElementById('stat-wins').textContent = this.profile.stats?.wins || 0;
+    document.getElementById('stat-draws').textContent = this.profile.stats?.draws || 0;
+    const bestAi = this.profile.stats?.highestAiBeaten || 0;
+    document.getElementById('stat-best-ai').textContent = bestAi > 0 ? `Cấp ${bestAi}` : 'Chưa';
+    document.getElementById('stat-used-pages').textContent = `${overview.usedPagesCount} / 200`;
+
+    const summaryEl = document.getElementById('notebook-index-summary');
     if (summaryEl) {
-      summaryEl.textContent = `Đã viết trên ${overview.usedPagesCount} / 200 trang • Tổng cộng ${overview.totalFinishedGames} ván cờ đã được lưu và khoanh vùng.`;
+      summaryEl.textContent = `Đã viết trên ${overview.usedPagesCount} / 200 trang • Tổng cộng ${overview.totalFinishedGames} ván cờ đã được khoanh vùng điểm chết.`;
     }
 
-    grid.innerHTML = '';
-    for (const p of overview.pages) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `page-cell-btn status-${p.status} ${p.pageNumber === this.currentPageNumber ? 'current' : ''}`;
-      btn.innerHTML = `
-        <span class="page-cell-num">Trang ${p.pageNumber}</span>
-        <span class="page-cell-meta">${p.gamesCount > 0 ? `${p.gamesCount} ván (${p.usedRatio}%)` : p.hasActiveGame ? 'Đang chơi' : 'Giấy trắng'}</span>
-      `;
-      btn.addEventListener('click', () => {
-        modal.classList.add('hidden');
-        this.sound.playPageFlip();
-        this.loadPage(p.pageNumber);
+    const grid = document.getElementById('notebook-pages-grid');
+    if (grid) {
+      grid.innerHTML = '';
+      const filtered = overview.pages.filter(p => {
+        if (this.historyFilter === 'used') return p.gamesCount > 0 || p.hasActiveGame;
+        if (this.historyFilter === 'empty') return p.gamesCount === 0 && !p.hasActiveGame;
+        return true;
       });
-      grid.appendChild(btn);
+
+      for (const p of filtered) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `page-cell-btn status-${p.status} ${p.pageNumber === this.historySelectedPage ? 'selected' : ''}`;
+        btn.innerHTML = `
+          <span class="page-cell-num">Trang ${p.pageNumber}</span>
+          <span class="page-cell-meta">${p.gamesCount > 0 ? `${p.gamesCount} ván (${p.usedRatio}%)` : p.hasActiveGame ? 'Đang đánh' : 'Giấy trắng'}</span>
+        `;
+        btn.addEventListener('click', () => {
+          this.historySelectedPage = p.pageNumber;
+          this._renderHistoryView();
+        });
+        grid.appendChild(btn);
+      }
     }
 
-    modal.classList.remove('hidden');
+    // Chi tiết trang đang chọn bên cột phải
+    const selectedPageData = await this.store.getPage(this.historySelectedPage);
+    const deadSet = new Set();
+    for (const g of selectedPageData.archivedGames || []) {
+      for (const dc of g.deadCells || []) deadSet.add(dc);
+    }
+    const freePct = Math.max(0, Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100));
+
+    document.getElementById('history-selected-page-title').textContent = `Trang ${this.historySelectedPage} / 200`;
+    document.getElementById('history-selected-page-meta').textContent =
+      `Đã khoanh ${selectedPageData.archivedGames.length} ván • Trống ${freePct}%`;
+
+    const listEl = document.getElementById('history-page-games-list');
+    if (listEl) {
+      if (selectedPageData.archivedGames.length === 0) {
+        listEl.innerHTML = `<div class="hint-text">Trang ${this.historySelectedPage} hiện chưa có ván cờ nào bị khoanh vùng điểm chết.</div>`;
+      } else {
+        listEl.innerHTML = selectedPageData.archivedGames
+          .map((g, idx) => {
+            const timeStr = new Date(g.finishedAt).toLocaleString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+              day: '2-digit',
+              month: '2-digit'
+            });
+            const resText = g.winnerSymbol === 'DRAW' ? 'Hòa cờ' : `${g.winnerSymbol} thắng (${g.winnerName})`;
+            return `
+              <div class="archived-item">
+                <div class="archived-item-head">
+                  <strong>Ván #${idx + 1}: ${resText}</strong>
+                  <span>${timeStr}</span>
+                </div>
+                <div class="archived-item-sub">
+                  ${g.modeLabel} • ${g.moves?.length || 0} nước đi • Khoanh ${g.deadCells?.length || 0} ô điểm chết
+                </div>
+              </div>
+            `;
+          })
+          .join('');
+      }
+    }
   }
 
   _renderPublicRoomList(rooms) {
@@ -995,7 +1139,7 @@ class CaroNotebookApp {
     if (!listEl) return;
 
     if (!rooms || rooms.length === 0) {
-      listEl.innerHTML = `<div class="empty-rooms-note">Chưa có phòng chờ nào. Hãy bấm "Tạo Phòng Mới" hoặc "Ghép Trận Nhanh"!</div>`;
+      listEl.innerHTML = `<div class="hint-text">Chưa có phòng nào đang mở. Hãy chọn trang vở của bạn và bấm "Tạo Phòng Mới"!</div>`;
       return;
     }
 
@@ -1003,13 +1147,13 @@ class CaroNotebookApp {
     for (const r of rooms) {
       const row = document.createElement('div');
       row.className = 'room-list-item';
-      const subLabel = r.subMode === 'team' ? 'Chia Phe X/O' : r.subMode === 'ffa' ? 'Hỗn Chiến 2-4' : 'Đấu 1v1';
+      const subLabel = r.subMode === 'team' ? 'Chia Phe X/O' : r.subMode === 'ffa' ? 'Hỗn Chiến 2–4' : 'Đấu 1v1';
       row.innerHTML = `
         <div>
-          <strong>Phòng #${r.roomId}</strong> • <span class="room-tag">${subLabel}</span>
-          <div class="room-sub">Chủ phòng: ${r.hostName} • ${r.playerCount} người • Đã khoanh ${r.archivedCount} ván</div>
+          <strong>Phòng #${r.roomId}</strong> • <span>${subLabel}</span>
+          <div class="hint-text">Vở của ${r.hostName} (Trang ${r.hostPageNumber || 1}/200) • ${r.playerCount} người • Đã khoanh ${r.archivedCount} ván</div>
         </div>
-        <button type="button" class="btn-small-primary">Vào Phòng</button>
+        <button type="button" class="btn-primary">Vào</button>
       `;
       row.querySelector('button').addEventListener('click', () => {
         this.mp.joinRoom({ roomId: r.roomId, playerName: this.profile.name });
@@ -1019,28 +1163,54 @@ class CaroNotebookApp {
   }
 
   _renderOnlineRoomPanel(room) {
-    const lobbyBox = document.getElementById('online-lobby-box');
-    const activeRoomBox = document.getElementById('online-active-room-box');
-    if (!lobbyBox || !activeRoomBox) return;
+    const outsideBox = document.getElementById('coop-outside-room');
+    const insideBox = document.getElementById('coop-inside-room');
+    if (!outsideBox || !insideBox) return;
 
     if (!room) {
-      lobbyBox.classList.remove('hidden');
-      activeRoomBox.classList.add('hidden');
+      outsideBox.classList.remove('hidden');
+      insideBox.classList.add('hidden');
       return;
     }
 
-    lobbyBox.classList.add('hidden');
-    activeRoomBox.classList.remove('hidden');
+    outsideBox.classList.add('hidden');
+    insideBox.classList.remove('hidden');
 
     document.getElementById('active-room-code').textContent = room.roomId;
+    document.getElementById('active-room-title').textContent =
+      `Vở của ${room.hostName} • Trang ${room.hostPageNumber || 1} / 200 (Đã khoanh ${room.archivedGames?.length || 0} ván)`;
+
     const subModeLabel = room.subMode === 'team'
       ? 'Co-op Chia Phe (Đội X vs Đội O luân phiên)'
       : room.subMode === 'ffa'
         ? 'Hỗn Chiến Nhiều Người (X, O, Δ, □)'
-        : 'Đấu 1v1 Cổ Điển (Có khán giả)';
-    document.getElementById('active-room-submode').textContent = subModeLabel;
+        : 'Đấu 1v1 Cổ Điển (+Khán giả)';
+    document.getElementById('active-room-submode').textContent =
+      `${subModeLabel} • Luật chặn 2 đầu: ${room.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
 
-    // Hiển thị danh sách người chơi và nút đổi Phe/Ký hiệu
+    const isHost = this.mp.isHost();
+    const hostControls = document.getElementById('host-room-controls');
+    const hostPageInput = document.getElementById('input-host-room-page');
+    const hostBlockToggle = document.getElementById('coop-host-block-toggle');
+    const lockNote = document.getElementById('host-control-lock-note');
+
+    if (hostControls) {
+      hostControls.classList.toggle('hidden', !isHost);
+    }
+    if (hostPageInput) {
+      hostPageInput.value = room.hostPageNumber || 1;
+      hostPageInput.disabled = (room.moves?.length || 0) > 0;
+    }
+    if (hostBlockToggle) {
+      hostBlockToggle.checked = room.blockTwoEnds;
+      hostBlockToggle.disabled = (room.moves?.length || 0) > 0;
+    }
+    if (lockNote) {
+      lockNote.textContent = (room.moves?.length || 0) > 0
+        ? 'Đang trong ván đấu (Khoanh ván hiện tại nếu muốn đổi trang)'
+        : 'Chưa đánh nước đầu tiên — Chủ phòng có thể chọn trang vở bất kỳ (1–200)';
+    }
+
     const playersContainer = document.getElementById('active-room-players');
     if (playersContainer) {
       playersContainer.innerHTML = room.players
@@ -1049,23 +1219,19 @@ class CaroNotebookApp {
           const roleBadge = p.symbol === 'SPECTATOR' ? '👀 Khán giả' : `Bút ${p.symbol}`;
           return `
             <div class="room-player-row ${isMe ? 'me' : ''}">
-              <span>${p.name} ${isMe ? '(Bạn)' : ''}</span>
-              <span class="player-symbol-pill sym-${p.symbol}">${roleBadge}</span>
+              <span>${p.isHost ? '👑 ' : ''}${p.name} ${isMe ? '(Bạn)' : ''}</span>
+              <strong>${roleBadge}</strong>
             </div>
           `;
         })
         .join('');
     }
 
-    // Các nút chọn phe trong phòng
     const switchBox = document.getElementById('room-symbol-Readiness');
     if (switchBox) {
       const allowedSymbols = room.subMode === 'ffa' ? ['X', 'O', 'Δ', '□', 'SPECTATOR'] : ['X', 'O', 'SPECTATOR'];
       switchBox.innerHTML = allowedSymbols
-        .map(sym => {
-          const label = sym === 'SPECTATOR' ? '👀 Xem' : `Phe ${sym}`;
-          return `<button type="button" class="btn-switch-sym" data-sym="${sym}">${label}</button>`;
-        })
+        .map(sym => `<button type="button" class="btn-switch-sym" data-sym="${sym}">${sym === 'SPECTATOR' ? '👀 Xem' : `Chọn Bút ${sym}`}</button>`)
         .join('');
       switchBox.querySelectorAll('.btn-switch-sym').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1075,11 +1241,17 @@ class CaroNotebookApp {
     }
   }
 
+  _sendCurrentChatInput() {
+    const input = document.getElementById('input-chat-msg');
+    if (!input || !input.value.trim()) return;
+    this.mp.sendChat(input.value.trim());
+    input.value = '';
+  }
+
   _appendChatMessage({ sender, symbol, text }) {
     const log = document.getElementById('online-chat-log');
     if (!log) return;
     const div = document.createElement('div');
-    div.className = 'chat-line';
     div.innerHTML = `<strong>[${symbol || '•'}] ${sender}:</strong> <span></span>`;
     div.querySelector('span').textContent = text;
     log.appendChild(div);
@@ -1091,7 +1263,6 @@ class CaroNotebookApp {
     const titleEl = document.getElementById('banner-title');
     const subEl = document.getElementById('banner-subtitle');
     if (!banner || !titleEl || !subEl) return;
-
     titleEl.textContent = title;
     subEl.textContent = subtitle;
     banner.classList.remove('hidden');
@@ -1112,8 +1283,8 @@ class CaroNotebookApp {
 
     setTimeout(() => {
       item.classList.add('fade-out');
-      setTimeout(() => item.remove(), 300);
-    }, 3200);
+      setTimeout(() => item.remove(), 260);
+    }, 3000);
   }
 }
 

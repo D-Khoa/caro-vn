@@ -121,6 +121,20 @@ async function runWebSocketBenchmark() {
             roomCode = msg.room.roomId;
             guestWs.send(JSON.stringify({ type: 'join_room', roomId: roomCode, playerName: `Guest_${p}` }));
           } else if (msg.type === 'room_state' && msg.room.players.length === 2 && moveSentAt === 0) {
+            if (p === 0 && msg.room.hostPageNumber !== 42) {
+              // Kiểm thử Chủ Phòng chọn Trang 42 trước khi bắt đầu ván
+              hostWs.send(JSON.stringify({
+                type: 'host_select_page',
+                pageNumber: 42,
+                dateHeader: 'Thứ Bảy, Trang 42 của Chủ Phòng',
+                archivedGames: []
+              }));
+              return;
+            }
+            moveSentAt = performance.now();
+            hostWs.send(JSON.stringify({ type: 'place_move', r: 10, c: 10 }));
+          } else if (msg.type === 'host_page_changed' && p === 0 && moveSentAt === 0) {
+            assert(msg.room.hostPageNumber === 42, 'Chủ phòng đổi sang Trang 42 phải được đồng bộ cho cả phòng');
             moveSentAt = performance.now();
             hostWs.send(JSON.stringify({ type: 'place_move', r: 10, c: 10 }));
           }

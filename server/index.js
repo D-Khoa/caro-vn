@@ -4,6 +4,7 @@
  * - In-memory Static File + Gzip Cache (0 Disk I/O khi phục vụ trang web)
  * - WebSocket thuần với perMessageDeflate: false (~15KB RAM / kết nối)
  * - Quản lý Phòng & Ghép trận O(1) theo Hash Map
+ * - Đồng bộ Trang Vở Ô Ly của Chủ Phòng (Host's Notebook Page) cho tất cả người chơi trong phòng Co-op
  */
 
 import http from 'node:http';
@@ -15,6 +16,7 @@ import { WebSocketServer } from 'ws';
 import {
   BOARD_ROWS,
   BOARD_COLS,
+  TOTAL_NOTEBOOK_PAGES,
   SYMBOLS,
   cellKey,
   isValidCell,
@@ -137,7 +139,10 @@ function serializeRoom(room) {
 
   return {
     roomId: room.roomId,
+    hostClientId: room.hostClientId,
     hostName: room.hostName,
+    hostPageNumber: room.hostPageNumber,
+    hostDateHeader: room.hostDateHeader,
     subMode: room.subMode,
     blockTwoEnds: room.blockTwoEnds,
     activeSymbols,
@@ -148,7 +153,8 @@ function serializeRoom(room) {
     players: Array.from(room.players.values()).map(p => ({
       clientId: p.clientId,
       name: p.name,
-      symbol: p.symbol
+      symbol: p.symbol,
+      isHost: p.clientId === room.hostClientId
     }))
   };
 }
@@ -189,10 +195,13 @@ function removeClientFromCurrentRoom(ws) {
     return;
   }
 
-  // Nếu chủ phòng rời đi, gán chủ phòng cho người tiếp theo
-  const firstPlayer = room.players.values().next().value;
-  if (firstPlayer) {
-    room.hostName = firstPlayer.name;
+  // Nếu chủ phòng rời đi, nhường quyền chủ phòng cho người tiếp theo trong phòng
+  if (room.hostClientId === ws.clientId) {
+    const nextHost = room.players.values().next().value;
+    if (nextHost) {
+      room.hostClientId = nextHost.clientId;
+      room.hostName = nextHost.name;
+    }
   }
 
   broadcastToRoom(room, {
@@ -201,16 +210,28 @@ function removeClientFromCurrentRoom(ws) {
   });
 }
 
-function createRoomForClient(ws, { playerName, subMode = '1v1', blockTwoEnds = true, archivedGames = [] }) {
+function createRoomForClient(ws, {
+  playerName,
+  subMode = '1v1',
+  blockTwoEnds = true,
+  pageNumber = 1,
+  dateHeader = '',
+  archivedGames = []
+}) {
   removeClientFromCurrentRoom(ws);
 
   const roomId = generateRoomCode();
-  const safeArchived = Array.isArray(archivedGames) ? archivedGames.slice(0, 40) : [];
+  const safePageNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(pageNumber) || 1));
+  const safeArchived = Array.isArray(archivedGames) ? archivedGames.slice(0, 50) : [];
   const deadSet = buildDeadSetFromArchived(safeArchived);
+  const hostName = (playerName ? String(playerName).slice(0, 28) : '') || ws.playerName || `Học Sinh #${ws.clientId}`;
 
   const room = {
     roomId,
-    hostName: playerName || ws.playerName || `Học Sinh #${ws.clientId}`,
+    hostClientId: ws.clientId,
+    hostName,
+    hostPageNumber: safePageNum,
+    hostDateHeader: dateHeader || '',
     subMode: ['1v1', 'team', 'ffa'].includes(subMode) ? subMode : '1v1',
     blockTwoEnds: Boolean(blockTwoEnds),
     archivedGames: safeArchived,
@@ -223,7 +244,7 @@ function createRoomForClient(ws, { playerName, subMode = '1v1', blockTwoEnds = t
     createdAt: Date.now()
   };
 
-  ws.playerName = room.hostName;
+  ws.playerName = hostName;
   ws.roomId = roomId;
   room.players.set(ws.clientId, {
     clientId: ws.clientId,
@@ -356,9 +377,11 @@ wss.on('connection', (ws) => {
           publicRooms.push({
             roomId: r.roomId,
             hostName: r.hostName,
+            hostPageNumber: r.hostPageNumber,
             subMode: r.subMode,
             playerCount: r.players.size,
-            archivedCount: r.archivedGames.length
+            archivedCount: r.archivedGames.length,
+            inProgress: r.moves.length > 0
           });
           if (publicRooms.length >= 30) break;
         }
@@ -409,6 +432,61 @@ wss.on('connection', (ws) => {
 
       case 'leave_room': {
         removeClientFromCurrentRoom(ws);
+        break;
+      }
+
+      case 'host_select_page': {
+        const room = rooms.get(ws.roomId);
+        if (!room) break;
+        if (room.hostClientId !== ws.clientId) {
+          sendJson(ws, { type: 'error_msg', message: 'Chỉ Chủ Phòng mới có quyền chọn trang vở đại chiến!' });
+          break;
+        }
+        if (room.moves.length > 0) {
+          sendJson(ws, {
+            type: 'error_msg',
+            message: 'Ván cờ đang diễn ra! Hãy Khoanh ván hiện tại trước khi đổi sang trang vở khác.'
+          });
+          break;
+        }
+
+        const safePageNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(msg.pageNumber) || 1));
+        const safeArchived = Array.isArray(msg.archivedGames) ? msg.archivedGames.slice(0, 50) : [];
+
+        room.hostPageNumber = safePageNum;
+        room.hostDateHeader = msg.dateHeader || '';
+        room.archivedGames = safeArchived;
+        room.deadSet = buildDeadSetFromArchived(safeArchived);
+        room.activeBoard = createEmptyBoard();
+        room.moves = [];
+        room.turnIndex = 0;
+
+        broadcastToRoom(room, {
+          type: 'host_page_changed',
+          pageNumber: safePageNum,
+          hostName: room.hostName,
+          room: serializeRoom(room)
+        });
+        break;
+      }
+
+      case 'host_update_settings': {
+        const room = rooms.get(ws.roomId);
+        if (!room || room.hostClientId !== ws.clientId) break;
+        if (room.moves.length > 0) {
+          sendJson(ws, { type: 'error_msg', message: 'Không thể đổi luật khi đang đánh dở ván cờ!' });
+          break;
+        }
+        if (msg.blockTwoEnds !== undefined) {
+          room.blockTwoEnds = Boolean(msg.blockTwoEnds);
+        }
+        if (msg.subMode && ['1v1', 'team', 'ffa'].includes(msg.subMode)) {
+          room.subMode = msg.subMode;
+        }
+        broadcastToRoom(room, {
+          type: 'room_state',
+          room: serializeRoom(room)
+        });
         break;
       }
 
@@ -500,7 +578,7 @@ wss.on('connection', (ws) => {
             id: room.activeGameId,
             gameIndexOnPage: room.archivedGames.length + 1,
             mode: 'pvp-online',
-            modeLabel: `Online #${room.roomId}`,
+            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
             blockTwoEnds: room.blockTwoEnds,
             winnerSymbol: player.symbol,
             winnerName: player.name,
@@ -514,7 +592,7 @@ wss.on('connection', (ws) => {
           room.archivedGames.push(archivedRecord);
           for (const dc of deadCells) room.deadSet.add(dc);
 
-          // Khởi tạo ván tiếp theo ngay trên phần giấy trống còn lại của trang vở
+          // Khởi tạo ván tiếp theo ngay trên phần giấy trống còn lại của trang vở Chủ phòng
           room.activeBoard = createEmptyBoard();
           room.moves = [];
           room.activeGameId = `online_${Date.now()}`;
@@ -546,7 +624,7 @@ wss.on('connection', (ws) => {
             id: room.activeGameId,
             gameIndexOnPage: room.archivedGames.length + 1,
             mode: 'pvp-online',
-            modeLabel: `Online #${room.roomId}`,
+            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
             blockTwoEnds: room.blockTwoEnds,
             winnerSymbol: 'DRAW',
             winnerName: 'Hòa cờ',
@@ -585,6 +663,10 @@ wss.on('connection', (ws) => {
       case 'new_round_same_page': {
         const room = rooms.get(ws.roomId);
         if (!room || room.moves.length === 0) break;
+        if (room.hostClientId !== ws.clientId) {
+          sendJson(ws, { type: 'error_msg', message: 'Chỉ Chủ Phòng mới có quyền khoanh sớm ván đang đánh!' });
+          break;
+        }
 
         const { deadCells, contours } = computeGameFenceAndDeadZone(
           room.moves,
@@ -597,10 +679,10 @@ wss.on('connection', (ws) => {
           id: room.activeGameId,
           gameIndexOnPage: room.archivedGames.length + 1,
           mode: 'pvp-online',
-          modeLabel: `Online #${room.roomId}`,
+          modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
           blockTwoEnds: room.blockTwoEnds,
           winnerSymbol: 'DRAW',
-          winnerName: 'Khoanh vùng sớm',
+          winnerName: 'Chủ phòng khoanh sớm',
           winLine: null,
           moves: room.moves,
           deadCells,
@@ -618,7 +700,7 @@ wss.on('connection', (ws) => {
           type: 'game_over',
           result: {
             winnerSymbol: 'DRAW',
-            winnerName: 'Đã khoanh vùng ván cờ'
+            winnerName: 'Chủ phòng đã khoanh vùng ván cờ'
           },
           room: serializeRoom(room)
         });
