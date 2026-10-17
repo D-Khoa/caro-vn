@@ -1,0 +1,19 @@
+{
+  "name": "caro-vo-o-ly-vn",
+  "version": "1.0.0",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "description": "Webgame Cờ Caro Việt Nam trên trang vở ô ly 200 trang - Siêu nhẹ, hỗ trợ 10,000 CCU, PvP (Local & Co-op Online) và PvE 10 cấp độ từ Tập Sự đến Cờ Thánh",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "start:cluster": "node server/cluster.js",
+    "benchmark": "node scripts/benchmark-10k.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

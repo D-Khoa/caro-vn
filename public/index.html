@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cờ Caro Vở Ô Ly Việt Nam - Quyển Vở 200 Trang</title>
+  <link rel="stylesheet" href="./css/style.css" />
+</head>
+<body>
+  <div class="desk-wrapper">
+    <!-- Thanh tiêu đề trên cùng: Nhãn Vở Học Sinh & Điều hướng Quyển Vở 200 Trang -->
+    <header class="top-notebook-bar">
+      <div class="brand-box">
+        <div class="notebook-emblem">📓</div>
+        <div>
+          <h1 class="game-title">CỜ CARO VỞ Ô LY VIỆT NAM</h1>
+          <p class="game-subtitle">Quyển vở 200 trang • Khoanh vùng thế cờ cũ • PvE 10 Cấp &amp; PvP Co-op 10,000 CCU</p>
+        </div>
+      </div>
+
+      <!-- Nhãn vở truyền thống Việt Nam -->
+      <div class="student-label-card" title="Bấm vào tên để đổi tên học sinh trên nhãn vở">
+        <div class="label-border-inner">
+          <div class="label-row">
+            <span>Họ &amp; tên:</span>
+            <input id="student-name-input" type="text" maxlength="26" value="Học Sinh #1024" />
+          </div>
+          <div class="label-stats-row">
+            <span>🏆 Thắng: <strong id="stat-wins">0</strong></span>
+            <span>🤝 Hòa: <strong id="stat-draws">0</strong></span>
+            <span>🎖️ Kỷ lục AI: <strong id="stat-best-ai">Chưa</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bộ lật trang 1 -> 200 -->
+      <div class="page-navigator">
+        <button id="btn-prev-page" type="button" class="btn-nav-page" title="Lật về trang trước">◀ Trang trước</button>
+        <div class="page-jump-box">
+          <span>Trang</span>
+          <input id="page-jump-input" type="number" min="1" max="200" value="1" />
+          <span>/ 200</span>
+        </div>
+        <button id="btn-next-page" type="button" class="btn-nav-page" title="Lật sang trang tiếp theo">Trang sau ▶</button>
+        <button id="btn-open-index" type="button" class="btn-open-toc">📖 Mục lục 200 trang</button>
+      </div>
+    </header>
+
+    <!-- Khu vực chính: Trang vở ô ly bên trái + Hộp bút & Chế độ chơi bên phải -->
+    <main class="main-workspace">
+      <!-- Cột trái: Trang Vở Ô Ly -->
+      <section class="notebook-sheet-section">
+        <!-- Thanh công cụ hộp bút phía trên trang vở -->
+        <div class="sheet-toolbar">
+          <div class="turn-status-group">
+            <span id="current-turn-badge" class="turn-badge">Lượt đi: Mực Xanh (X)</span>
+            <span id="current-mode-desc" class="mode-desc-text">Đấu với Máy • Cấp 5: Cờ Thủ Xóm</span>
+            <span id="current-move-count" class="move-count-pill">Nước thứ: 0</span>
+          </div>
+
+          <div class="sheet-actions-group">
+            <button id="btn-fence-now" type="button" class="btn-tool btn-fence" title="Khoanh vùng các quân đang đánh thành Điểm Chết để bắt đầu ván mới ngay trên trang này">
+              ✒️ Khoanh ván này (Tạo điểm chết)
+            </button>
+            <button id="btn-undo-move" type="button" class="btn-tool" title="Đi lại nước vừa đánh">
+              ↩️ Đi lại
+            </button>
+            <button id="btn-clear-page" type="button" class="btn-tool btn-danger-soft" title="Dùng tẩy xóa sạch toàn bộ trang hiện tại">
+              🧽 Tẩy trang này
+            </button>
+            <button id="btn-toggle-sound" type="button" class="btn-tool">
+              🔊 Âm thanh: Bật
+            </button>
+          </div>
+        </div>
+
+        <!-- Thông báo kết thúc ván cờ & đã khoanh vùng điểm chết -->
+        <div id="game-end-banner" class="game-end-banner hidden">
+          <div class="banner-content">
+            <strong id="banner-title">Ván #1 Chiến Thắng!</strong>
+            <p id="banner-subtitle">Thế cờ đã được khoanh vùng điểm chết. Đánh vào ô trống bất kỳ để chơi tiếp ván mới trên trang này!</p>
+          </div>
+          <button id="btn-dismiss-banner" type="button" class="btn-banner-ok">Đánh tiếp trên trang này</button>
+        </div>
+
+        <!-- Khung trang giấy vở ô ly -->
+        <div class="notebook-paper-container">
+          <canvas id="notebook-canvas"></canvas>
+        </div>
+
+        <!-- Chân trang vở -->
+        <div class="sheet-footer-bar">
+          <span id="current-page-stats">Đã khoanh: 0 ván • Điểm chết: 0 ô • Trống: 100%</span>
+          <span class="footer-hint">💡 Mẹo: Khi ván cờ kết thúc, thế cờ cũ sẽ được khoanh mực bút bi thành <strong>Điểm chết</strong>. Hãy đánh vào các ô trống còn lại để chơi tiếp ván mới trên cùng trang vở!</span>
+        </div>
+      </section>
+
+      <!-- Cột phải: Bảng điều khiển Chế độ chơi & Lịch sử trang vở -->
+      <aside class="control-sidebar">
+        <!-- Chọn chế độ chơi -->
+        <div class="sidebar-card">
+          <div class="mode-tabs">
+            <button type="button" class="mode-tab-btn active" data-mode="pve">🤖 PvE (10 Cấp)</button>
+            <button type="button" class="mode-tab-btn" data-mode="pvp-local">👥 PvP Chung Màn</button>
+            <button type="button" class="mode-tab-btn" data-mode="pvp-online">🌐 PvP Co-op Online</button>
+          </div>
+
+          <!-- Tuỳ chọn luật chặn 2 đầu -->
+          <div class="rule-setting-bar">
+            <label class="rule-checkbox-label">
+              <input id="toggle-block-two-ends" type="checkbox" checked />
+              <span>Áp dụng <strong>Luật chặn 2 đầu</strong> (Chuẩn Caro học sinh VN)</span>
+            </label>
+          </div>
+
+          <!-- PANEL 1: Chế độ PvE (10 cấp độ từ Tập Sự đến Cờ Thánh) -->
+          <div id="panel-pve" class="mode-panel">
+            <div class="pve-side-selector">
+              <span>Chọn màu bút của bạn:</span>
+              <label><input type="radio" name="pve-side" value="X" checked /> <strong class="sym-x-text">Bút Xanh (X - Đi trước)</strong></label>
+              <label><input type="radio" name="pve-side" value="O" /> <strong class="sym-o-text">Bút Đỏ (O - Đi sau)</strong></label>
+            </div>
+            <div class="panel-section-title">Chọn 1 trong 10 cấp độ đối thủ máy:</div>
+            <div id="ai-levels-grid" class="ai-levels-grid"></div>
+          </div>
+
+          <!-- PANEL 2: Chế độ PvP Local (Chung màn hình) -->
+          <div id="panel-pvp-local" class="mode-panel hidden">
+            <div class="panel-section-title">Số người cùng chơi trên 1 màn hình:</div>
+            <div class="local-count-group">
+              <button type="button" class="local-count-btn active" data-count="2">2 Người (X - O)</button>
+              <button type="button" class="local-count-btn" data-count="3">3 Người (X - O - Δ)</button>
+              <button type="button" class="local-count-btn" data-count="4">4 Người (X - O - Δ - □)</button>
+            </div>
+            <div class="local-guide-box">
+              <p>🖊️ <strong>Cách chơi:</strong> Người chơi lần lượt chấm bút vào các ô trống trên trang vở ô ly. Khi có người đạt 5 quân liên tiếp, thế cờ sẽ tự động được khoanh vùng lại và ván mới tiếp tục ngay trên phần giấy trống còn lại!</p>
+            </div>
+          </div>
+
+          <!-- PANEL 3: Chế độ PvP Co-op Online -->
+          <div id="panel-pvp-online" class="mode-panel hidden">
+            <div class="online-telemetry-bar">
+              <span id="online-conn-badge" class="conn-badge disconnected">Đang kết nối...</span>
+              <span>Độ trễ: <strong id="ping-value" class="ping-good">-- ms</strong></span>
+              <span>Online: <strong id="server-ccu-count">1 / 10,000</strong></span>
+            </div>
+
+            <!-- Giao diện Sảnh chờ khi chưa vào phòng -->
+            <div id="online-lobby-box">
+              <div class="panel-section-title">Kiểu chơi Co-op nhiều người:</div>
+              <div class="online-submode-group">
+                <button type="button" class="online-submode-btn active" data-submode="1v1">⚔️ Đấu 1v1 (+Khán giả)</button>
+                <button type="button" class="online-submode-btn" data-submode="team">🤝 Chia Phe Đội X vs Đội O</button>
+                <button type="button" class="online-submode-btn" data-submode="ffa">🔥 Hỗn Chiến 2-4 Người (X,O,Δ,□)</button>
+              </div>
+
+              <div class="online-action-buttons">
+                <button id="btn-quick-match" type="button" class="btn-primary-action">⚡ Ghép Trận Nhanh</button>
+                <button id="btn-create-room" type="button" class="btn-secondary-action">➕ Tạo Phòng Mới</button>
+              </div>
+
+              <div class="join-code-row">
+                <input id="input-room-code" type="text" placeholder="Nhập mã phòng (VD: A1B2C)" maxlength="8" />
+                <button id="btn-join-room" type="button" class="btn-small-primary">Vào</button>
+              </div>
+
+              <div class="public-rooms-header">
+                <span>Phòng đang mở (<span id="server-room-count">0</span>)</span>
+                <button id="btn-refresh-rooms" type="button" class="btn-link">🔄 Làm mới</button>
+              </div>
+              <div id="public-rooms-list" class="public-rooms-list"></div>
+            </div>
+
+            <!-- Giao diện khi đang ở trong Phòng Online -->
+            <div id="online-active-room-box" class="hidden">
+              <div class="active-room-header">
+                <div>
+                  <span class="room-code-label">Mã phòng: <strong id="active-room-code">----</strong></span>
+                  <div id="active-room-submode" class="room-submode-text">Đấu 1v1</div>
+                </div>
+                <button id="btn-leave-room" type="button" class="btn-leave">Rời phòng</button>
+              </div>
+
+              <div class="switch-role-bar">
+                <span>Đổi phe / màu mực:</span>
+                <div id="room-symbol-Readiness" class="switch-role-btns"></div>
+              </div>
+
+              <div id="active-room-players" class="active-room-players"></div>
+
+              <!-- Khung chat nhanh học trò -->
+              <div class="online-chat-box">
+                <div id="online-chat-log" class="online-chat-log"></div>
+                <div class="quick-chat-chips">
+                  <button type="button" class="quick-chat-chip" data-msg="Chấp cậu đi trước 1 nước đó!">Chấp 1 nước!</button>
+                  <button type="button" class="quick-chat-chip" data-msg="Coi chừng đôi ba nha!">Coi chừng đôi ba!</button>
+                  <button type="button" class="quick-chat-chip" data-msg="Khoanh vùng ván này đánh tiếp bên cạnh đi!">Đánh tiếp bên cạnh!</button>
+                  <button type="button" class="quick-chat-chip" data-msg="Cao thủ Cờ Thánh đây rồi!">Cờ Thánh!</button>
+                </div>
+                <div class="chat-input-row">
+                  <input id="input-chat-msg" type="text" placeholder="Nhắn tin trên lề vở..." maxlength="120" />
+                  <button id="btn-send-chat" type="button" class="btn-small-primary">Gửi</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Danh sách các ván cờ đã khoanh vùng trên trang hiện tại -->
+        <div class="sidebar-card">
+          <div class="card-header-row">
+            <h3>📌 Các ván đã khoanh trên trang này</h3>
+          </div>
+          <div id="page-archived-games-list" class="archived-games-list"></div>
+
+          <div class="notebook-backup-row">
+            <button id="btn-export-notebook" type="button" class="btn-backup">💾 Xuất vở (.json)</button>
+            <button id="btn-import-notebook" type="button" class="btn-backup">📂 Nhập vở (.json)</button>
+            <input id="input-import-notebook" type="file" accept=".json" class="hidden" />
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Modal Mục Lục 200 Trang Vở Ô Ly -->
+  <div id="notebook-index-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h2>📖 MỤC LỤC QUYỂN VỞ Ô LY 200 TRANG</h2>
+          <p id="notebook-index-summary">Chọn bất kỳ trang nào từ Trang 1 đến Trang 200 để xem lại thế cờ cũ hoặc đánh tiếp trên phần giấy còn trống.</p>
+        </div>
+        <button id="btn-close-index-modal" type="button" class="btn-close-modal">✕ Đóng</button>
+      </div>
+      <div id="notebook-pages-grid" class="notebook-pages-grid"></div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

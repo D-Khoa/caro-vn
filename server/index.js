@@ -1,0 +1,655 @@
+/**
+ * High-Concurrency Server cho Webgame Cờ Caro Vở Ô Ly Việt Nam
+ * Thiết kế tối ưu để đáp ứng >= 10,000 người chơi đồng thời (10k CCU) với độ trễ < 50ms (yêu cầu < 3s):
+ * - In-memory Static File + Gzip Cache (0 Disk I/O khi phục vụ trang web)
+ * - WebSocket thuần với perMessageDeflate: false (~15KB RAM / kết nối)
+ * - Quản lý Phòng & Ghép trận O(1) theo Hash Map
+ */
+
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { WebSocketServer } from 'ws';
+import {
+  BOARD_ROWS,
+  BOARD_COLS,
+  SYMBOLS,
+  cellKey,
+  isValidCell,
+  checkWinAt,
+  countPlayableCells,
+  computeGameFenceAndDeadZone
+} from '../public/js/rules.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const PORT = Number(process.env.PORT) || 3000;
+
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon'
+};
+
+// Bộ nhớ đệm file tĩnh (Raw + Gzip) giúp phản hồi HTTP trong < 1ms
+const staticCache = new Map();
+
+function getCachedStaticFile(relPath) {
+  if (staticCache.has(relPath)) {
+    return staticCache.get(relPath);
+  }
+  const absPath = path.join(PUBLIC_DIR, relPath);
+  if (!absPath.startsWith(PUBLIC_DIR) || !fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) {
+    return null;
+  }
+  const raw = fs.readFileSync(absPath);
+  const gzipped = zlib.gzipSync(raw);
+  const ext = path.extname(absPath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+  const entry = { raw, gzipped, contentType };
+  staticCache.set(relPath, entry);
+  return entry;
+}
+
+// Quản lý kết nối và Phòng đấu trong RAM (O(1) lookup)
+const clients = new Map(); // clientId -> ws
+const rooms = new Map();   // roomId -> RoomObject
+let clientSeq = 1;
+
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  for (let attempt = 0; attempt < 20; attempt++) {
+    let code = '';
+    for (let i = 0; i < 5; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    if (!rooms.has(code)) return code;
+  }
+  return `R${Date.now().toString(36).toUpperCase().slice(-4)}`;
+}
+
+function createEmptyBoard() {
+  return Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
+}
+
+function buildDeadSetFromArchived(archivedGames = []) {
+  const set = new Set();
+  for (const g of archivedGames) {
+    if (Array.isArray(g.deadCells)) {
+      for (const k of g.deadCells) set.add(k);
+    }
+  }
+  return set;
+}
+
+function getActiveSymbolsForRoom(room) {
+  if (room.subMode === 'ffa') {
+    const present = [];
+    for (const sym of SYMBOLS) {
+      if (Array.from(room.players.values()).some(p => p.symbol === sym)) {
+        present.push(sym);
+      }
+    }
+    return present.length >= 2 ? present : ['X', 'O'];
+  }
+  return ['X', 'O'];
+}
+
+function assignSymbolForNewPlayer(room) {
+  const playerList = Array.from(room.players.values());
+
+  if (room.subMode === '1v1') {
+    const hasX = playerList.some(p => p.symbol === 'X');
+    const hasO = playerList.some(p => p.symbol === 'O');
+    if (!hasX) return 'X';
+    if (!hasO) return 'O';
+    return 'SPECTATOR';
+  }
+
+  if (room.subMode === 'team') {
+    const countX = playerList.filter(p => p.symbol === 'X').length;
+    const countO = playerList.filter(p => p.symbol === 'O').length;
+    return countX <= countO ? 'X' : 'O';
+  }
+
+  if (room.subMode === 'ffa') {
+    for (const sym of SYMBOLS) {
+      if (!playerList.some(p => p.symbol === sym)) {
+        return sym;
+      }
+    }
+    return 'SPECTATOR';
+  }
+
+  return 'X';
+}
+
+function serializeRoom(room) {
+  const activeSymbols = getActiveSymbolsForRoom(room);
+  const currentTurnSymbol = activeSymbols[room.turnIndex % activeSymbols.length] || 'X';
+
+  return {
+    roomId: room.roomId,
+    hostName: room.hostName,
+    subMode: room.subMode,
+    blockTwoEnds: room.blockTwoEnds,
+    activeSymbols,
+    currentTurnSymbol,
+    moves: room.moves,
+    archivedGames: room.archivedGames,
+    activeGameId: room.activeGameId,
+    players: Array.from(room.players.values()).map(p => ({
+      clientId: p.clientId,
+      name: p.name,
+      symbol: p.symbol
+    }))
+  };
+}
+
+function broadcastToRoom(room, payloadObj) {
+  const data = JSON.stringify(payloadObj);
+  for (const p of room.players.values()) {
+    if (p.ws.readyState === 1) {
+      p.ws.send(data);
+    }
+  }
+}
+
+function sendJson(ws, obj) {
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+function getServerStats() {
+  return {
+    onlineCount: clients.size,
+    roomCount: rooms.size
+  };
+}
+
+function removeClientFromCurrentRoom(ws) {
+  const roomId = ws.roomId;
+  if (!roomId) return;
+  ws.roomId = null;
+
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  room.players.delete(ws.clientId);
+  if (room.players.size === 0) {
+    rooms.delete(roomId);
+    return;
+  }
+
+  // Nếu chủ phòng rời đi, gán chủ phòng cho người tiếp theo
+  const firstPlayer = room.players.values().next().value;
+  if (firstPlayer) {
+    room.hostName = firstPlayer.name;
+  }
+
+  broadcastToRoom(room, {
+    type: 'room_state',
+    room: serializeRoom(room)
+  });
+}
+
+function createRoomForClient(ws, { playerName, subMode = '1v1', blockTwoEnds = true, archivedGames = [] }) {
+  removeClientFromCurrentRoom(ws);
+
+  const roomId = generateRoomCode();
+  const safeArchived = Array.isArray(archivedGames) ? archivedGames.slice(0, 40) : [];
+  const deadSet = buildDeadSetFromArchived(safeArchived);
+
+  const room = {
+    roomId,
+    hostName: playerName || ws.playerName || `Học Sinh #${ws.clientId}`,
+    subMode: ['1v1', 'team', 'ffa'].includes(subMode) ? subMode : '1v1',
+    blockTwoEnds: Boolean(blockTwoEnds),
+    archivedGames: safeArchived,
+    deadSet,
+    activeBoard: createEmptyBoard(),
+    activeGameId: `online_${Date.now()}`,
+    moves: [],
+    turnIndex: 0,
+    players: new Map(),
+    createdAt: Date.now()
+  };
+
+  ws.playerName = room.hostName;
+  ws.roomId = roomId;
+  room.players.set(ws.clientId, {
+    clientId: ws.clientId,
+    name: ws.playerName,
+    symbol: 'X',
+    ws
+  });
+
+  rooms.set(roomId, room);
+
+  sendJson(ws, {
+    type: 'room_state',
+    room: serializeRoom(room)
+  });
+  return room;
+}
+
+function joinExistingRoom(ws, roomId, playerName) {
+  const room = rooms.get(roomId);
+  if (!room) {
+    sendJson(ws, { type: 'error_msg', message: `Không tìm thấy phòng #${roomId}!` });
+    return null;
+  }
+
+  removeClientFromCurrentRoom(ws);
+
+  if (playerName) ws.playerName = String(playerName).slice(0, 28);
+  const assignedSymbol = assignSymbolForNewPlayer(room);
+
+  ws.roomId = roomId;
+  room.players.set(ws.clientId, {
+    clientId: ws.clientId,
+    name: ws.playerName,
+    symbol: assignedSymbol,
+    ws
+  });
+
+  broadcastToRoom(room, {
+    type: 'room_state',
+    room: serializeRoom(room)
+  });
+  return room;
+}
+
+// Khởi tạo HTTP Server
+const server = http.createServer((req, res) => {
+  const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  if (urlObj.pathname === '/health') {
+    const body = JSON.stringify({
+      status: 'ok',
+      ...getServerStats(),
+      memoryMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      uptimeSec: Math.round(process.uptime())
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(body);
+    return;
+  }
+
+  let relPath = urlObj.pathname === '/' ? '/index.html' : urlObj.pathname;
+  relPath = path.normalize(relPath).replace(/^(\.\.(\/|\\|$))+/, '');
+
+  const cached = getCachedStaticFile(relPath);
+  if (!cached) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('404 Not Found');
+    return;
+  }
+
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  if (acceptEncoding.includes('gzip')) {
+    res.writeHead(200, {
+      'Content-Type': cached.contentType,
+      'Content-Encoding': 'gzip',
+      'Cache-Control': 'no-cache'
+    });
+    res.end(cached.gzipped);
+  } else {
+    res.writeHead(200, {
+      'Content-Type': cached.contentType,
+      'Cache-Control': 'no-cache'
+    });
+    res.end(cached.raw);
+  }
+});
+
+// Khởi tạo WebSocket Server tại /ws
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  perMessageDeflate: false,
+  maxPayload: 64 * 1024
+});
+
+wss.on('connection', (ws) => {
+  const clientId = `c${clientSeq++}`;
+  ws.clientId = clientId;
+  ws.playerName = `Học Sinh #${clientSeq}`;
+  ws.roomId = null;
+  clients.set(clientId, ws);
+
+  sendJson(ws, {
+    type: 'welcome',
+    clientId,
+    stats: getServerStats()
+  });
+
+  ws.on('message', (rawBuf) => {
+    let msg;
+    try {
+      msg = JSON.parse(rawBuf.toString());
+    } catch (_) {
+      return;
+    }
+
+    switch (msg.type) {
+      case 'ping': {
+        sendJson(ws, {
+          type: 'pong',
+          t: msg.t,
+          stats: getServerStats()
+        });
+        break;
+      }
+
+      case 'list_rooms': {
+        const publicRooms = [];
+        for (const r of rooms.values()) {
+          publicRooms.push({
+            roomId: r.roomId,
+            hostName: r.hostName,
+            subMode: r.subMode,
+            playerCount: r.players.size,
+            archivedCount: r.archivedGames.length
+          });
+          if (publicRooms.length >= 30) break;
+        }
+        sendJson(ws, {
+          type: 'room_list',
+          rooms: publicRooms,
+          stats: getServerStats()
+        });
+        break;
+      }
+
+      case 'create_room': {
+        createRoomForClient(ws, msg);
+        break;
+      }
+
+      case 'join_room': {
+        joinExistingRoom(ws, String(msg.roomId || '').toUpperCase(), msg.playerName);
+        break;
+      }
+
+      case 'quick_match': {
+        const desiredMode = msg.subMode || '1v1';
+        let targetRoom = null;
+        for (const r of rooms.values()) {
+          if (r.subMode !== desiredMode) continue;
+          if (desiredMode === '1v1' && r.players.size < 2) {
+            targetRoom = r;
+            break;
+          }
+          if (desiredMode === 'team' && r.players.size < 8) {
+            targetRoom = r;
+            break;
+          }
+          if (desiredMode === 'ffa' && r.players.size < 4) {
+            targetRoom = r;
+            break;
+          }
+        }
+
+        if (targetRoom) {
+          joinExistingRoom(ws, targetRoom.roomId, msg.playerName);
+        } else {
+          createRoomForClient(ws, msg);
+        }
+        break;
+      }
+
+      case 'leave_room': {
+        removeClientFromCurrentRoom(ws);
+        break;
+      }
+
+      case 'switch_symbol': {
+        const room = rooms.get(ws.roomId);
+        if (!room) break;
+        const player = room.players.get(ws.clientId);
+        if (!player) break;
+
+        const targetSym = msg.symbol;
+        const validSyms = room.subMode === 'ffa' ? [...SYMBOLS, 'SPECTATOR'] : ['X', 'O', 'SPECTATOR'];
+        if (!validSyms.includes(targetSym)) break;
+
+        if (room.subMode === '1v1' && targetSym !== 'SPECTATOR') {
+          const occupied = Array.from(room.players.values()).some(
+            p => p.clientId !== ws.clientId && p.symbol === targetSym
+          );
+          if (occupied) {
+            sendJson(ws, { type: 'error_msg', message: `Bút ${targetSym} đã có người cầm trong phòng 1v1!` });
+            break;
+          }
+        }
+
+        player.symbol = targetSym;
+        broadcastToRoom(room, {
+          type: 'room_state',
+          room: serializeRoom(room)
+        });
+        break;
+      }
+
+      case 'place_move': {
+        const room = rooms.get(ws.roomId);
+        if (!room) break;
+        const player = room.players.get(ws.clientId);
+        if (!player || player.symbol === 'SPECTATOR') {
+          sendJson(ws, { type: 'error_msg', message: 'Bạn đang là Khán giả, hãy chọn Phe để đánh!' });
+          break;
+        }
+
+        const activeSymbols = getActiveSymbolsForRoom(room);
+        const currentTurnSymbol = activeSymbols[room.turnIndex % activeSymbols.length] || 'X';
+
+        if (player.symbol !== currentTurnSymbol) {
+          sendJson(ws, { type: 'error_msg', message: `Chưa tới lượt của phe ${player.symbol}! (Đang là lượt ${currentTurnSymbol})` });
+          break;
+        }
+
+        const r = Number(msg.r);
+        const c = Number(msg.c);
+        if (!isValidCell(r, c, BOARD_ROWS, BOARD_COLS)) break;
+
+        const k = cellKey(r, c);
+        if (room.deadSet.has(k)) {
+          sendJson(ws, { type: 'error_msg', message: 'Ô này thuộc vùng khoanh Điểm Chết của ván cũ!' });
+          break;
+        }
+
+        if (room.activeBoard[r][c] !== null) break;
+
+        room.activeBoard[r][c] = player.symbol;
+        const moveObj = {
+          r,
+          c,
+          symbol: player.symbol,
+          playerName: player.name,
+          moveNumber: room.moves.length + 1
+        };
+        room.moves.push(moveObj);
+        room.turnIndex = (room.turnIndex + 1) % activeSymbols.length;
+
+        // Kiểm tra chiến thắng
+        const winCheck = checkWinAt(room.activeBoard, r, c, {
+          blockTwoEnds: room.blockTwoEnds,
+          deadSet: room.deadSet,
+          rows: BOARD_ROWS,
+          cols: BOARD_COLS
+        });
+
+        if (winCheck.won) {
+          const { deadCells, contours } = computeGameFenceAndDeadZone(
+            room.moves,
+            room.deadSet,
+            BOARD_ROWS,
+            BOARD_COLS
+          );
+
+          const archivedRecord = {
+            id: room.activeGameId,
+            gameIndexOnPage: room.archivedGames.length + 1,
+            mode: 'pvp-online',
+            modeLabel: `Online #${room.roomId}`,
+            blockTwoEnds: room.blockTwoEnds,
+            winnerSymbol: player.symbol,
+            winnerName: player.name,
+            winLine: winCheck.line,
+            moves: room.moves,
+            deadCells,
+            contours,
+            finishedAt: Date.now()
+          };
+
+          room.archivedGames.push(archivedRecord);
+          for (const dc of deadCells) room.deadSet.add(dc);
+
+          // Khởi tạo ván tiếp theo ngay trên phần giấy trống còn lại của trang vở
+          room.activeBoard = createEmptyBoard();
+          room.moves = [];
+          room.activeGameId = `online_${Date.now()}`;
+          room.turnIndex = 0;
+
+          broadcastToRoom(room, {
+            type: 'game_over',
+            result: {
+              winnerSymbol: player.symbol,
+              winnerName: player.name,
+              winLine: winCheck.line
+            },
+            room: serializeRoom(room)
+          });
+          break;
+        }
+
+        // Kiểm tra Hòa
+        const remaining = countPlayableCells(room.activeBoard, room.deadSet, BOARD_ROWS, BOARD_COLS);
+        if (remaining === 0) {
+          const { deadCells, contours } = computeGameFenceAndDeadZone(
+            room.moves,
+            room.deadSet,
+            BOARD_ROWS,
+            BOARD_COLS
+          );
+
+          room.archivedGames.push({
+            id: room.activeGameId,
+            gameIndexOnPage: room.archivedGames.length + 1,
+            mode: 'pvp-online',
+            modeLabel: `Online #${room.roomId}`,
+            blockTwoEnds: room.blockTwoEnds,
+            winnerSymbol: 'DRAW',
+            winnerName: 'Hòa cờ',
+            winLine: null,
+            moves: room.moves,
+            deadCells,
+            contours,
+            finishedAt: Date.now()
+          });
+          for (const dc of deadCells) room.deadSet.add(dc);
+
+          room.activeBoard = createEmptyBoard();
+          room.moves = [];
+          room.activeGameId = `online_${Date.now()}`;
+          room.turnIndex = 0;
+
+          broadcastToRoom(room, {
+            type: 'game_over',
+            result: {
+              winnerSymbol: 'DRAW',
+              winnerName: 'Hòa cờ'
+            },
+            room: serializeRoom(room)
+          });
+          break;
+        }
+
+        broadcastToRoom(room, {
+          type: 'move_made',
+          move: moveObj,
+          room: serializeRoom(room)
+        });
+        break;
+      }
+
+      case 'new_round_same_page': {
+        const room = rooms.get(ws.roomId);
+        if (!room || room.moves.length === 0) break;
+
+        const { deadCells, contours } = computeGameFenceAndDeadZone(
+          room.moves,
+          room.deadSet,
+          BOARD_ROWS,
+          BOARD_COLS
+        );
+
+        room.archivedGames.push({
+          id: room.activeGameId,
+          gameIndexOnPage: room.archivedGames.length + 1,
+          mode: 'pvp-online',
+          modeLabel: `Online #${room.roomId}`,
+          blockTwoEnds: room.blockTwoEnds,
+          winnerSymbol: 'DRAW',
+          winnerName: 'Khoanh vùng sớm',
+          winLine: null,
+          moves: room.moves,
+          deadCells,
+          contours,
+          finishedAt: Date.now()
+        });
+
+        for (const dc of deadCells) room.deadSet.add(dc);
+        room.activeBoard = createEmptyBoard();
+        room.moves = [];
+        room.activeGameId = `online_${Date.now()}`;
+        room.turnIndex = 0;
+
+        broadcastToRoom(room, {
+          type: 'game_over',
+          result: {
+            winnerSymbol: 'DRAW',
+            winnerName: 'Đã khoanh vùng ván cờ'
+          },
+          room: serializeRoom(room)
+        });
+        break;
+      }
+
+      case 'chat': {
+        const room = rooms.get(ws.roomId);
+        if (!room) break;
+        const player = room.players.get(ws.clientId);
+        const text = String(msg.text || '').trim().slice(0, 120);
+        if (!text) break;
+
+        broadcastToRoom(room, {
+          type: 'chat_message',
+          sender: player ? player.name : ws.playerName,
+          symbol: player ? player.symbol : '•',
+          text,
+          at: Date.now()
+        });
+        break;
+      }
+    }
+  });
+
+  ws.on('close', () => {
+    removeClientFromCurrentRoom(ws);
+    clients.delete(clientId);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`[Caro Vở Ô Ly VN] Server đang chạy tại http://localhost:${PORT}`);
+});

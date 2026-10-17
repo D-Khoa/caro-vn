@@ -1,0 +1,105 @@
+GIẤY PHÉP BẢN QUYỀN & BẢO HỘ SỞ HỮU TRÍ TUỆ (INTELLECTUAL PROPERTY & NONCOMMERCIAL LICENSE)
+Dự án: Cờ Caro Vở Ô Ly Việt Nam (caro-vo-o-ly-vn)
+Bản quyền (c) 2026 thuộc về Tác giả / Chủ sở hữu dự án Cờ Caro Vở Ô Ly Việt Nam.
+Mọi quyền sở hữu trí tuệ được bảo lưu (All Rights Reserved under Dual-Layer Licensing).
+
+================================================================================
+PHẦN I: BẢN TIẾNG VIỆT (VIETNAMESE OFFICIAL TERMS)
+================================================================================
+
+Dự án Webgame "Cờ Caro Vở Ô Ly Việt Nam" được cấp phép theo Mô hình Bản quyền Kép
+(Dual-Layer Intellectual Property License) nhằm đảm bảo phần mềm luôn MIỄN PHÍ 100%
+cho người chơi và cộng đồng học tập, đồng thời bảo vệ nghiêm ngặt quyền sở hữu trí tuệ
+của Tác giả gốc:
+
+1. QUYỀN SỬ DỤNG MIỄN PHÍ CHO NGƯỜI DÙNG & CỘNG ĐỒNG (PHI THƯƠNG MẠI)
+   Mọi cá nhân, học sinh, sinh viên và tổ chức giáo dục/phi lợi nhuận được cấp phép
+   miễn phí để:
+   - Chơi và trải nghiệm đầy đủ các tính năng của webgame (PvE, PvP Local, PvP Co-op Online,
+     Quyển vở ô ly 200 trang).
+   - Xem, tải xuống, chạy thử nghiệm và nghiên cứu mã nguồn cho mục đích cá nhân,
+     giáo dục, học tập hoặc nghiên cứu phi thương mại.
+
+2. NGHIÊM CẤM KHAI THÁC THƯƠNG MẠI TRÁI PHÉP (NON-COMMERCIAL RESTRICTION)
+   Nếu KHÔNG có sự cho phép trước bằng văn bản của Chủ sở hữu bản quyền, nghiêm cấm
+   mọi cá nhân hoặc tổ chức thực hiện bất kỳ hành vi nào sau đây:
+   - Bán, cho thuê, thu phí người chơi, hoặc phân phối Phần mềm (hoặc bản phái sinh)
+     dưới bất kỳ hình thức thu lợi nhuận nào.
+   - Dựng máy chủ/website công cộng sử dụng mã nguồn hoặc giao diện của Phần mềm để
+     gắn quảng cáo, kêu gọi tài trợ thương mại, thu thập dữ liệu người dùng cho mục đích
+     kinh doanh, hoặc tích hợp vào cổng game/ứng dụng thương mại.
+
+3. BẢO HỘ THƯƠNG HIỆU, Ý TƯỞNG THIẾT KẾ & TÀI SẢN ĐỒ HỌA (TRADEMARK & DESIGN IP)
+   Các yếu tố nhận diện đặc trưng của trò chơi — bao gồm nhưng không giới hạn ở:
+   - Tên gọi "Cờ Caro Vở Ô Ly Việt Nam", bố cục trang vở ô ly học sinh 200 trang,
+     nhãn vở học sinh truyền thống;
+   - Cơ chế thiết kế khoanh vùng thế cờ cũ bằng đường viền bút bi bo sát (Polygonal
+     Contour Dead-Zone) để chơi nhiều ván độc lập trên cùng một trang vở;
+   - Hệ thống cấp bậc danh hiệu AI từ "Tập Sự" đến "Cờ Thánh";
+   được bảo hộ theo quyền tác giả và nhãn hiệu (Creative Commons BY-NC-ND 4.0 &
+   All Rights Reserved). Nghiêm cấm mọi hành vi sao chép kiểu dáng, mạo danh thương hiệu,
+   hoặc xóa bỏ thông tin ghi nhận tác giả gốc.
+
+4. ĐIỀU KIỆN GHI NHẬN TÁC GIẢ (MANDATORY ATTRIBUTION)
+   Mọi bản sao hoặc bản cài đặt hợp lệ phục vụ mục đích phi thương mại đều phải giữ
+   nguyên thông báo bản quyền này và tệp LICENSE ở vị trí dễ nhận biết.
+
+5. QUYỀN THƯƠNG MẠI ĐỘC QUYỀN CỦA TÁC GIẢ GỐC (EXCLUSIVE COMMERCIAL RIGHTS)
+   Chủ sở hữu bản quyền gốc giữ toàn quyền độc quyền trong việc khai thác thương mại,
+   phát hành chính thức, hoặc cấp giấy phép thương mại riêng biệt (Commercial License)
+   cho các đối tác được chấp thuận.
+
+6. MIỄN TRỪ TRÁCH NHIỆM (DISCLAIMER OF WARRANTY)
+   Phần mềm được cung cấp "NGUYÊN TRẠNG" (AS IS) mà không có bất kỳ cam kết bảo đảm
+   nào. Tác giả không chịu trách nhiệm pháp lý đối với bất kỳ thiệt hại nào phát sinh
+   từ việc sử dụng Phần mềm.
+
+================================================================================
+PART II: ENGLISH VERSION (POLYFORM NONCOMMERCIAL 1.0.0 + IP & TRADEMARK TERMS)
+================================================================================
+
+1. INTELLECTUAL PROPERTY, BRAND & DESIGN PROTECTION (CC BY-NC-ND 4.0)
+   All original game concepts, visual layouts ("Vietnamese 200-Page School Notebook /
+   Vở Ô Ly"), branding ("Cờ Caro Vở Ô Ly Việt Nam"), and the signature polygonal
+   ballpoint-pen dead-zone fencing mechanics are the exclusive intellectual property
+   of the Copyright Holder. You may not misrepresent authorship, remove copyright
+   notices, or distribute derivative rebranded clones.
+
+2. POLYFORM NONCOMMERCIAL LICENSE 1.0.0 (APPLICABLE TO SOURCE CODE)
+
+   Acceptance:
+   In order to get any license under these terms, you must agree to them as both
+   strict obligations and conditions to all your licenses.
+
+   Copyright License:
+   The licensor grants you a copyright license for the software to do everything
+   you might do with the software that would otherwise infringe the licensor's
+   copyright in it for any permitted purpose. However, you may only distribute the
+   software according to Distribution License below.
+
+   Permitted Purpose (Noncommercial Only):
+   A permitted purpose is any personal, educational, academic, or noncommercial
+   purpose that IS NOT intended for or directed toward commercial advantage or
+   monetary compensation (including advertising revenue, paid subscriptions,
+   in-app purchases, or commercial portal aggregation).
+
+   Distribution License:
+   The licensor grants you an additional copyright license to distribute copies
+   of the software for Permitted Purposes only. Your license to distribute covers
+   distributing the software with changes and new code only if you keep all
+   copyright notices and this LICENSE file intact.
+
+   Notices:
+   You must ensure that anyone who gets a copy of any part of the software from
+   you also gets a copy of these terms and the copyright notice above.
+
+   No Liability:
+   As far as the law allows, the software comes AS IS, without any warranty or
+   condition, and the licensor will not be liable to you for any damages arising
+   out of these terms or the use or nature of the software, under any kind of
+   legal claim.
+
+3. COMMERCIAL LICENSING INQUIRIES
+   All commercial rights are strictly reserved by the Copyright Holder. Any entity
+   wishing to use, host, embed, or distribute this software for commercial purposes
+   must obtain a separate written Commercial License from the Copyright Holder.
