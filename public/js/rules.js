@@ -183,169 +183,142 @@ export function computeGameFenceAndDeadZone(moves, existingDeadSet = new Set(), 
     return { deadCells: [], contours: [] };
   }
 
+  // Chỉ lấy đúng các ô thực sự có quân cờ của ván vừa kết thúc (không lấy tràn sang ô trống xung quanh)
   const regionSet = new Set();
   for (const m of moves) {
-    regionSet.add(cellKey(m.r, m.c));
-  }
-
-  // Bước 1: Nối các quân cờ đứng cách nhau 1 ô trống (cầu nối chéo hoặc thẳng trong phạm vi thế cờ)
-  // giúp đường khoanh bút bi liền mạch giống học sinh khoanh 1 cụm cờ, nhưng vẫn tiết kiệm tối đa diện tích trang.
-  const moveCoords = moves.map(m => ({ r: m.r, c: m.c }));
-  for (let i = 0; i < moveCoords.length; i++) {
-    for (let j = i + 1; j < moveCoords.length; j++) {
-      const a = moveCoords[i];
-      const b = moveCoords[j];
-      const dr = Math.abs(a.r - b.r);
-      const dc = Math.abs(a.c - b.c);
-      // Nếu 2 quân trong cùng ván cách nhau đúng 1 ô trung gian (Chebyshev <= 2)
-      if (Math.max(dr, dc) <= 2) {
-        const midR = Math.round((a.r + b.r) / 2);
-        const midC = Math.round((a.c + b.c) / 2);
-        const midKey = cellKey(midR, midC);
-        if (!existingDeadSet.has(midKey)) {
-          regionSet.add(midKey);
-        }
-        // Nếu chéo (dr===1 && dc===1) thì bổ sung 1 ô kề để đa giác không bị thắt nút cổ chai
-        if (dr === 1 && dc === 1) {
-          const k1 = cellKey(a.r, b.c);
-          const k2 = cellKey(b.r, a.c);
-          if (!existingDeadSet.has(k1)) regionSet.add(k1);
-          else if (!existingDeadSet.has(k2)) regionSet.add(k2);
-        }
-      }
+    const k = cellKey(m.r, m.c);
+    if (!existingDeadSet.has(k)) {
+      regionSet.add(k);
     }
   }
 
-  // Bước 2: Lấp các lỗ hổng nhỏ (<= 8 ô) bị bao vây kín 4 hướng bởi regionSet
-  const visitedOutside = new Set();
-  const queue = [];
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (r === 0 || r === rows - 1 || c === 0 || c === cols - 1) {
-        const k = cellKey(r, c);
-        if (!regionSet.has(k)) {
-          visitedOutside.add(k);
-          queue.push({ r, c });
-        }
-      }
-    }
+  if (regionSet.size === 0) {
+    return { deadCells: [], contours: [] };
   }
 
-  let head = 0;
-  while (head < queue.length) {
-    const curr = queue[head++];
-    const neighbors = [
-      { r: curr.r - 1, c: curr.c },
-      { r: curr.r + 1, c: curr.c },
-      { r: curr.r, c: curr.c - 1 },
-      { r: curr.r, c: curr.c + 1 }
-    ];
-    for (const nb of neighbors) {
-      if (isValidCell(nb.r, nb.c, rows, cols)) {
-        const nk = cellKey(nb.r, nb.c);
-        if (!regionSet.has(nk) && !visitedOutside.has(nk)) {
-          visitedOutside.add(nk);
-          queue.push(nb);
-        }
-      }
-    }
-  }
-
-  // Các ô không thuộc visitedOutside và không thuộc existingDeadSet nằm lọt thỏm bên trong vùng khoanh
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
+  // Chỉ lấp ô trống đơn lẻ ( đúng 1 ô ) nếu cả 4 phía Trên - Dưới - Trái - Phải của nó
+  // đều là quân cờ của CHÍNH ván này (tránh tạo lỗ thủng 1 ô giữa cụm cờ đặc).
+  const singleHoles = [];
+  for (let r = 1; r < rows - 1; r++) {
+    for (let c = 1; c < cols - 1; c++) {
       const k = cellKey(r, c);
-      if (!regionSet.has(k) && !visitedOutside.has(k) && !existingDeadSet.has(k)) {
-        regionSet.add(k);
+      if (regionSet.has(k) || existingDeadSet.has(k)) continue;
+      if (
+        regionSet.has(cellKey(r - 1, c)) &&
+        regionSet.has(cellKey(r + 1, c)) &&
+        regionSet.has(cellKey(r, c - 1)) &&
+        regionSet.has(cellKey(r, c + 1))
+      ) {
+        singleHoles.push(k);
       }
     }
   }
-
-  // Bước 3: Khử nút thắt chéo (Pinch vertices) để đường viền đa giác mượt mà
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (let r = 0; r < rows - 1; r++) {
-      for (let c = 0; c < cols - 1; c++) {
-        const tl = regionSet.has(cellKey(r, c));
-        const tr = regionSet.has(cellKey(r, c + 1));
-        const bl = regionSet.has(cellKey(r + 1, c));
-        const br = regionSet.has(cellKey(r + 1, c + 1));
-        if (tl && br && !tr && !bl) {
-          const k = cellKey(r, c + 1);
-          if (!existingDeadSet.has(k)) {
-            regionSet.add(k);
-            changed = true;
-          }
-        } else if (!tl && !br && tr && bl) {
-          const k = cellKey(r, c);
-          if (!existingDeadSet.has(k)) {
-            regionSet.add(k);
-            changed = true;
-          }
-        }
-      }
-    }
+  for (const hk of singleHoles) {
+    regionSet.add(hk);
   }
 
-  // Bước 4: Truy vết các cạnh biên định hướng (Directed Boundary Edges)
-  // Mỗi ô (r, c) chiếm góc từ (r, c) đến (r+1, c+1) trên hệ tọa độ đỉnh lưới.
-  // Chiều kim đồng hồ quanh ô (r, c):
-  // Top: (r, c) -> (r, c+1)
-  // Right: (r, c+1) -> (r+1, c+1)
-  // Bottom: (r+1, c+1) -> (r+1, c)
-  // Left: (r+1, c) -> (r, c)
+  // Truy vết các cạnh biên định hướng (Directed Boundary Edges)
+  // Hướng cạnh (dir): 0 = Sang phải (Top), 1 = Xuống dưới (Right), 2 = Sang trái (Bottom), 3 = Lên trên (Left)
+  // Pháp tuyến hướng vào tâm ô (inward normal):
+  // dir 0 -> (+1, 0), dir 1 -> (0, -1), dir 2 -> (-1, 0), dir 3 -> (0, +1)
+  const INWARD_NORMALS = [
+    { nr: 1, nc: 0 },
+    { nr: 0, nc: -1 },
+    { nr: -1, nc: 0 },
+    { nr: 0, nc: 1 }
+  ];
+
   const outgoingEdges = new Map();
 
-  function addDirectedEdge(r1, c1, r2, c2) {
+  function addDirectedEdge(r1, c1, r2, c2, dir) {
     const startKey = `${r1},${c1}`;
     if (!outgoingEdges.has(startKey)) {
       outgoingEdges.set(startKey, []);
     }
-    outgoingEdges.get(startKey).push({ r1, c1, r2, c2, used: false });
+    outgoingEdges.get(startKey).push({ r1, c1, r2, c2, dir, used: false });
   }
 
   for (const key of regionSet) {
     const { r, c } = parseCellKey(key);
-    // Top
     if (!regionSet.has(cellKey(r - 1, c))) {
-      addDirectedEdge(r, c, r, c + 1);
+      addDirectedEdge(r, c, r, c + 1, 0);
     }
-    // Right
     if (!regionSet.has(cellKey(r, c + 1))) {
-      addDirectedEdge(r, c + 1, r + 1, c + 1);
+      addDirectedEdge(r, c + 1, r + 1, c + 1, 1);
     }
-    // Bottom
     if (!regionSet.has(cellKey(r + 1, c))) {
-      addDirectedEdge(r + 1, c + 1, r + 1, c);
+      addDirectedEdge(r + 1, c + 1, r + 1, c, 2);
     }
-    // Left
     if (!regionSet.has(cellKey(r, c - 1))) {
-      addDirectedEdge(r + 1, c, r, c);
+      addDirectedEdge(r + 1, c, r, c, 3);
     }
   }
 
-  const contours = [];
+  const rawLoops = [];
   for (const [, edgeList] of outgoingEdges) {
     for (const startEdge of edgeList) {
       if (startEdge.used) continue;
 
-      const loop = [];
+      const edgeLoop = [];
       let currEdge = startEdge;
       while (currEdge && !currEdge.used) {
         currEdge.used = true;
-        loop.push({ r: currEdge.r1, c: currEdge.c1 });
+        edgeLoop.push(currEdge);
         const nextKey = `${currEdge.r2},${currEdge.c2}`;
-        const candidates = outgoingEdges.get(nextKey) || [];
-        currEdge = candidates.find(e => !e.used) || null;
+        const allAtVertex = outgoingEdges.get(nextKey) || [];
+        const candidates = allAtVertex.filter(e => !e.used);
+        if (candidates.length === 0) {
+          currEdge = null;
+        } else if (candidates.length === 1) {
+          currEdge = candidates[0];
+        } else {
+          // Đỉnh chạm chéo (saddle vertex) giữa 2 quân cờ chéo của CÙNG ván này:
+          // Rẽ trái ((dir + 3) % 4) để tạo cổ nối chéo mảnh giữa 2 quân cờ mà không lấn vào 2 ô trống bên cạnh.
+          const leftTurnDir = (currEdge.dir + 3) % 4;
+          currEdge = candidates.find(e => e.dir === leftTurnDir) || candidates[0];
+        }
       }
 
-      if (loop.length >= 4) {
-        contours.push(loop);
+      if (edgeLoop.length >= 4) {
+        rawLoops.push(edgeLoop);
       }
     }
   }
+
+  // Thu nhỏ nhẹ (Inset) các đỉnh biên vào bên trong ô điểm chết (~0.12 ô)
+  // giúp đường bút bi khoanh gọn trong các ô của ván cũ, không bao giờ đè lên ô trống của ván tiếp theo.
+  const INSET = 0.12;
+  const SADDLE_NECK = 0.09;
+  const contours = rawLoops.map(edgeLoop => {
+    const n = edgeLoop.length;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const prevEdge = edgeLoop[(i - 1 + n) % n];
+      const currEdge = edgeLoop[i];
+      const vR = currEdge.r1;
+      const vC = currEdge.c1;
+      const vKey = `${vR},${vC}`;
+      const isSaddle = (outgoingEdges.get(vKey)?.length || 0) >= 2;
+
+      const nPrev = INWARD_NORMALS[prevEdge.dir];
+      const nCurr = INWARD_NORMALS[currEdge.dir];
+
+      if (isSaddle && prevEdge.dir !== currEdge.dir) {
+        pts.push({
+          r: +(vR - (nPrev.nr + nCurr.nr) * SADDLE_NECK).toFixed(3),
+          c: +(vC - (nPrev.nc + nCurr.nc) * SADDLE_NECK).toFixed(3)
+        });
+      } else {
+        const sumNr = Math.max(-1, Math.min(1, nPrev.nr + nCurr.nr));
+        const sumNc = Math.max(-1, Math.min(1, nPrev.nc + nCurr.nc));
+        pts.push({
+          r: +(vR + sumNr * INSET).toFixed(3),
+          c: +(vC + sumNc * INSET).toFixed(3)
+        });
+      }
+    }
+    return pts;
+  });
 
   return {
     deadCells: Array.from(regionSet),

@@ -1,8 +1,11 @@
 /**
- * Client WebSocket thời gian thực siêu nhẹ cho chế độ PvP Co-op Online
+ * Client WebSocket & Cloud Relay thời gian thực cho chế độ PvP Co-op Online
  * - Tất cả người chơi cùng đại chiến trên Trang Vở Ô Ly của Chủ Phòng (Host's Notebook Page)
  * - Chủ phòng có thể chọn bất kỳ trang nào (1 -> 200) từ quyển vở của mình trước khi bắt đầu ván
- * - Hỗ trợ tự động chuyển sang BroadcastChannel Relay khi chạy trên GitHub Pages tĩnh
+ * - Hỗ trợ 2 chế độ kết nối tự động:
+ *   1. Dedicated Node.js WebSocket Server (/ws) khi chạy local hoặc server riêng (< 25ms)
+ *   2. Serverless Multi-Relay (Global WSS MQTT Relay + BroadcastChannel + LocalStorage Registry)
+ *      giúp tìm thấy bàn của nhau xuyên trình duyệt, xuyên tab và xuyên thiết bị ngay cả trên GitHub Pages tĩnh!
  */
 
 import {
@@ -16,20 +19,36 @@ import {
   computeGameFenceAndDeadZone
 } from './rules.js';
 
+const SHARED_STORAGE_KEY = 'caro_vn_shared_rooms_v2';
+const CLOUD_BROKERS = [
+  'wss://broker.emqx.io:8084/mqtt',
+  'wss://broker.hivemq.com:8884/mqtt'
+];
+const CLOUD_TOPIC = 'carovn/v2/coop_bus';
+
 export class MultiplayerClient {
   constructor(handlers = {}) {
     this.ws = null;
-    this.bc = null; // BroadcastChannel fallback cho GitHub Pages
+    this.bc = null;
+    this.mqttWs = null;
+    this.mqttConnected = false;
+    this.mqttBrokerIdx = 0;
+    this.mqttPingTimer = null;
+    this.hostAdvertiseTimer = null;
+
     this.usingFallback = false;
     this.handlers = handlers;
     this.connected = false;
-    this.clientId = `u_${Math.random().toString(36).slice(2, 8)}`;
+    this.clientId = `u_${Math.random().toString(36).slice(2, 9)}`;
     this.roomState = null;
     this.latencyMs = 0;
     this.pingTimer = null;
     this.pendingPingAt = 0;
     this.customWsUrl = localStorage.getItem('caro_vn_custom_ws_url') || '';
+
+    this.pendingPayloads = [];
     this.localFallbackRooms = new Map();
+    this.seenRelayMsgIds = new Set();
   }
 
   setCustomWsUrl(url) {
@@ -44,11 +63,23 @@ export class MultiplayerClient {
   }
 
   connect() {
-    if (this.connected && (this.ws?.readyState === WebSocket.OPEN || this.usingFallback)) {
+    if (this.usingFallback && this.connected) {
+      this._flushPendingPayloads();
       return;
     }
 
-    const isStaticGithubPages = window.location.hostname.endsWith('github.io') && !this.customWsUrl;
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this._flushPendingPayloads();
+      }
+      return;
+    }
+
+    const isStaticGithubPages =
+      window.location.hostname.endsWith('github.io') && !this.customWsUrl;
     if (isStaticGithubPages) {
       this._enableBroadcastChannelFallback();
       return;
@@ -57,23 +88,28 @@ export class MultiplayerClient {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = this.customWsUrl || `${proto}//${window.location.host}/ws`;
 
+    let socket;
     try {
-      this.ws = new WebSocket(url);
+      socket = new WebSocket(url);
+      this.ws = socket;
     } catch (_) {
       this._enableBroadcastChannelFallback();
       return;
     }
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
       this.usingFallback = false;
       this.connected = true;
       this._startPingLoop();
       if (this.handlers.onConnectionChange) {
         this.handlers.onConnectionChange(true, 'server');
       }
+      this._flushPendingPayloads();
     };
 
-    this.ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (this.ws !== socket) return;
       let msg;
       try {
         msg = JSON.parse(event.data);
@@ -83,40 +119,270 @@ export class MultiplayerClient {
       this._handleMessage(msg);
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
+      this.ws = null;
       if (!this.usingFallback) {
         this.connected = false;
         this._stopPingLoop();
-        // Nếu không kết nối được WebSocket (VD trên static host), bật chế độ đồng bộ đa tab
         this._enableBroadcastChannelFallback();
       }
     };
 
-    this.ws.onerror = () => {};
+    socket.onerror = () => {};
+  }
+
+  _flushPendingPayloads() {
+    if (!this.pendingPayloads.length) return;
+    const queue = this.pendingPayloads.splice(0, this.pendingPayloads.length);
+    for (const payload of queue) {
+      this.send(payload);
+    }
   }
 
   _enableBroadcastChannelFallback() {
-    if (this.usingFallback && this.connected) return;
-    if (typeof BroadcastChannel === 'undefined') {
-      if (this.handlers.onConnectionChange) {
-        this.handlers.onConnectionChange(false, 'offline');
-      }
+    if (this.usingFallback && this.connected) {
+      this._flushPendingPayloads();
       return;
     }
 
     this.usingFallback = true;
     this.connected = true;
-    this.latencyMs = 2;
-    this.bc = new BroadcastChannel('caro_vn_coop_channel');
-    this.bc.onmessage = (e) => {
-      this._handleFallbackChannelMessage(e.data);
-    };
+    this.latencyMs = 12;
+
+    // 1. Kênh đồng bộ giữa các Tab cùng trình duyệt
+    if (typeof BroadcastChannel !== 'undefined' && !this.bc) {
+      this.bc = new BroadcastChannel('caro_vn_coop_channel');
+      this.bc.onmessage = (e) => {
+        this._handleFallbackChannelMessage(e.data);
+      };
+    }
+
+    // 2. Kênh đồng bộ qua LocalStorage (giúp tab mở sau nhìn thấy ngay bàn đã tạo trước đó)
+    this._loadRoomsFromLocalStorage();
+    if (!this._storageListenerBound) {
+      this._storageListenerBound = true;
+      window.addEventListener('storage', (e) => {
+        if (e.key === SHARED_STORAGE_KEY) {
+          this._loadRoomsFromLocalStorage();
+          this._emitFallbackRoomList();
+        } else if (e.key === 'caro_vn_coop_event' && e.newValue) {
+          try {
+            const evt = JSON.parse(e.newValue);
+            this._handleFallbackChannelMessage(evt);
+          } catch (_) {}
+        }
+      });
+    }
+
+    // 3. Kênh Cloud Relay (MQTT over WSS) giúp tìm thấy bàn giữa các trình duyệt/thiết bị khác nhau trên GitHub Pages
+    this._connectCloudMqttRelay();
+
+    // Định kỳ Chủ Phòng phát tín hiệu quảng bá bàn để người mới vào sảnh luôn thấy bàn
+    if (!this.hostAdvertiseTimer) {
+      this.hostAdvertiseTimer = setInterval(() => {
+        this._pruneStaleFallbackRooms();
+        if (this.usingFallback && this.roomState && this.roomState.hostClientId === this.clientId) {
+          this.roomState.updatedAt = Date.now();
+          this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+          this._saveRoomsToLocalStorage();
+          this._broadcastFallback({ type: 'advertise_room', room: this.roomState });
+        }
+      }, 3500);
+    }
 
     if (this.handlers.onConnectionChange) {
       this.handlers.onConnectionChange(true, 'local-channel');
     }
     if (this.handlers.onLatencyUpdate) {
-      this.handlers.onLatencyUpdate(2, { onlineCount: 1, roomCount: this.localFallbackRooms.size });
+      this.handlers.onLatencyUpdate(this.latencyMs, {
+        onlineCount: Math.max(1, this.localFallbackRooms.size + 1),
+        roomCount: this.localFallbackRooms.size
+      });
+    }
+
+    this._flushPendingPayloads();
+    this._emitFallbackRoomList();
+  }
+
+  /* ============================================================================
+   * Cloud MQTT-over-WebSocket Relay (0 dependencies, hỗ trợ GitHub Pages & Xuyên thiết bị)
+   * ============================================================================ */
+  _connectCloudMqttRelay() {
+    if (this.mqttWs && (this.mqttWs.readyState === WebSocket.OPEN || this.mqttWs.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const brokerUrl = CLOUD_BROKERS[this.mqttBrokerIdx % CLOUD_BROKERS.length];
+    let ws;
+    try {
+      ws = new WebSocket(brokerUrl, 'mqtt');
+      ws.binaryType = 'arraybuffer';
+      this.mqttWs = ws;
+    } catch (_) {
+      return;
+    }
+
+    ws.onopen = () => {
+      if (this.mqttWs !== ws) return;
+      // Gửi gói MQTT CONNECT (Protocol MQTT 3.1.1)
+      const clientIdStr = `carovn_${this.clientId}_${Math.random().toString(36).slice(2, 6)}`;
+      const connectPkt = this._buildMqttConnectPacket(clientIdStr);
+      ws.send(connectPkt);
+    };
+
+    ws.onmessage = (evt) => {
+      if (this.mqttWs !== ws) return;
+      const bytes = new Uint8Array(evt.data);
+      if (bytes.length < 2) return;
+      const pktType = bytes[0] & 0xf0;
+
+      // CONNACK (0x20)
+      if (pktType === 0x20) {
+        this.mqttConnected = true;
+        this.latencyMs = 35;
+        if (this.handlers.onConnectionChange) {
+          this.handlers.onConnectionChange(true, 'server');
+        }
+        ws.send(this._buildMqttSubscribePacket(CLOUD_TOPIC));
+        // Hỏi danh sách phòng ngay khi lên mây
+        this._broadcastFallback({ type: 'query_rooms', requester: this.clientId });
+        if (this.roomState && this.roomState.hostClientId === this.clientId) {
+          this._broadcastFallback({ type: 'advertise_room', room: this.roomState });
+        }
+
+        if (this.mqttPingTimer) clearInterval(this.mqttPingTimer);
+        this.mqttPingTimer = setInterval(() => {
+          if (this.mqttWs && this.mqttWs.readyState === WebSocket.OPEN) {
+            this.mqttWs.send(new Uint8Array([0xc0, 0x00])); // PINGREQ
+          }
+        }, 25000);
+      } else if (pktType === 0x30) {
+        // PUBLISH (0x30)
+        const parsed = this._parseMqttPublishPacket(bytes);
+        if (parsed) {
+          try {
+            const msgObj = JSON.parse(parsed.payload);
+            this._handleFallbackChannelMessage(msgObj);
+          } catch (_) {}
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      if (this.mqttWs !== ws) return;
+      this.mqttConnected = false;
+      this.mqttWs = null;
+      if (this.mqttPingTimer) {
+        clearInterval(this.mqttPingTimer);
+        this.mqttPingTimer = null;
+      }
+      if (this.usingFallback) {
+        this.mqttBrokerIdx = (this.mqttBrokerIdx + 1) % CLOUD_BROKERS.length;
+        setTimeout(() => {
+          if (this.usingFallback) this._connectCloudMqttRelay();
+        }, 3000);
+      }
+    };
+
+    ws.onerror = () => {};
+  }
+
+  _encodeMqttLength(len) {
+    const out = [];
+    do {
+      let digit = len % 128;
+      len = Math.floor(len / 128);
+      if (len > 0) digit |= 0x80;
+      out.push(digit);
+    } while (len > 0);
+    return out;
+  }
+
+  _encodeUtf8(str) {
+    return new TextEncoder().encode(str);
+  }
+
+  _buildMqttConnectPacket(clientId) {
+    const idBytes = this._encodeUtf8(clientId);
+    const varHeader = [0x00, 0x04, 0x4d, 0x51, 0x54, 0x54, 0x04, 0x02, 0x00, 0x3c];
+    const payload = [idBytes.length >> 8, idBytes.length & 0xff, ...idBytes];
+    const remLen = varHeader.length + payload.length;
+    return new Uint8Array([0x10, ...this._encodeMqttLength(remLen), ...varHeader, ...payload]);
+  }
+
+  _buildMqttSubscribePacket(topic) {
+    const topicBytes = this._encodeUtf8(topic);
+    const payload = [0x00, 0x01, topicBytes.length >> 8, topicBytes.length & 0xff, ...topicBytes, 0x00];
+    return new Uint8Array([0x82, ...this._encodeMqttLength(payload.length), ...payload]);
+  }
+
+  _buildMqttPublishPacket(topic, jsonStr) {
+    const topicBytes = this._encodeUtf8(topic);
+    const msgBytes = this._encodeUtf8(jsonStr);
+    const remLen = 2 + topicBytes.length + msgBytes.length;
+    const header = [0x30, ...this._encodeMqttLength(remLen), topicBytes.length >> 8, topicBytes.length & 0xff];
+    const pkt = new Uint8Array(header.length + topicBytes.length + msgBytes.length);
+    pkt.set(header, 0);
+    pkt.set(topicBytes, header.length);
+    pkt.set(msgBytes, header.length + topicBytes.length);
+    return pkt;
+  }
+
+  _parseMqttPublishPacket(bytes) {
+    let idx = 1;
+    let multiplier = 1;
+    let remLen = 0;
+    while (idx < bytes.length) {
+      const b = bytes[idx++];
+      remLen += (b & 0x7f) * multiplier;
+      if ((b & 0x80) === 0) break;
+      multiplier *= 128;
+    }
+    if (idx + 2 > bytes.length) return null;
+    const topicLen = (bytes[idx] << 8) | bytes[idx + 1];
+    idx += 2;
+    const qos = (bytes[0] >> 1) & 0x03;
+    const payloadStart = idx + topicLen + (qos > 0 ? 2 : 0);
+    if (payloadStart > bytes.length) return null;
+    const payload = new TextDecoder().decode(bytes.subarray(payloadStart));
+    return { payload };
+  }
+
+  _loadRoomsFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(SHARED_STORAGE_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const now = Date.now();
+      for (const [roomId, room] of Object.entries(obj)) {
+        if (room && room.roomId && now - (room.updatedAt || 0) < 30000) {
+          if (!this.localFallbackRooms.has(roomId) || (room.updatedAt || 0) >= (this.localFallbackRooms.get(roomId)?.updatedAt || 0)) {
+            this.localFallbackRooms.set(roomId, room);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  _saveRoomsToLocalStorage() {
+    try {
+      this._pruneStaleFallbackRooms();
+      const obj = {};
+      for (const [roomId, room] of this.localFallbackRooms.entries()) {
+        obj[roomId] = room;
+      }
+      localStorage.setItem(SHARED_STORAGE_KEY, JSON.stringify(obj));
+    } catch (_) {}
+  }
+
+  _pruneStaleFallbackRooms() {
+    const now = Date.now();
+    for (const [roomId, room] of this.localFallbackRooms.entries()) {
+      if (this.roomState && this.roomState.roomId === roomId) continue;
+      if (now - (room.updatedAt || now) > 25000) {
+        this.localFallbackRooms.delete(roomId);
+      }
     }
   }
 
@@ -129,6 +395,18 @@ export class MultiplayerClient {
     if (this.bc) {
       this.bc.close();
       this.bc = null;
+    }
+    if (this.mqttWs) {
+      this.mqttWs.close();
+      this.mqttWs = null;
+    }
+    if (this.mqttPingTimer) {
+      clearInterval(this.mqttPingTimer);
+      this.mqttPingTimer = null;
+    }
+    if (this.hostAdvertiseTimer) {
+      clearInterval(this.hostAdvertiseTimer);
+      this.hostAdvertiseTimer = null;
     }
     this.connected = false;
     this.usingFallback = false;
@@ -160,11 +438,13 @@ export class MultiplayerClient {
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(payload));
+    } else {
+      this.pendingPayloads.push(payload);
+      this.connect();
     }
   }
 
   createRoom({ playerName, subMode = '1v1', blockTwoEnds = true, pageNumber = 1, dateHeader = '', archivedGames = [] }) {
-    this.connect();
     this._sendWhenReady({
       type: 'create_room',
       playerName,
@@ -177,7 +457,6 @@ export class MultiplayerClient {
   }
 
   joinRoom({ roomId, playerName }) {
-    this.connect();
     this._sendWhenReady({
       type: 'join_room',
       roomId: String(roomId).trim().toUpperCase(),
@@ -186,7 +465,6 @@ export class MultiplayerClient {
   }
 
   quickMatch({ playerName, subMode = '1v1', blockTwoEnds = true, pageNumber = 1, dateHeader = '', archivedGames = [] }) {
-    this.connect();
     this._sendWhenReady({
       type: 'quick_match',
       playerName,
@@ -216,7 +494,6 @@ export class MultiplayerClient {
   }
 
   requestRoomList() {
-    this.connect();
     this._sendWhenReady({ type: 'list_rooms' });
   }
 
@@ -265,13 +542,10 @@ export class MultiplayerClient {
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.send(payload);
-    } else if (this.ws) {
-      const onOpen = () => {
-        this.ws?.removeEventListener('open', onOpen);
-        this.send(payload);
-      };
-      this.ws.addEventListener('open', onOpen);
+      return;
     }
+    this.pendingPayloads.push(payload);
+    this.connect();
   }
 
   _handleMessage(msg) {
@@ -344,70 +618,151 @@ export class MultiplayerClient {
   }
 
   /* ============================================================================
-   * Chế độ Đồng bộ Đa Tab (BroadcastChannel) khi chạy trên GitHub Pages tĩnh
+   * Chế độ Đồng bộ Đa Kênh (Cloud MQTT + BroadcastChannel + LocalStorage)
    * ============================================================================ */
+  _isFallbackRoomJoinable(r) {
+    const count = r.players?.length || 0;
+    if (r.subMode === '1v1') return count < 2;
+    if (r.subMode === 'team') return count < 8;
+    if (r.subMode === 'ffa') return count < 4;
+    return count < 2;
+  }
+
+  _emitFallbackRoomList() {
+    this._pruneStaleFallbackRooms();
+    const list = Array.from(this.localFallbackRooms.values()).map(r => ({
+      roomId: r.roomId,
+      hostName: r.hostName,
+      hostPageNumber: r.hostPageNumber,
+      subMode: r.subMode,
+      playerCount: r.players?.length || 1,
+      archivedCount: r.archivedGames?.length || 0,
+      inProgress: (r.moves?.length || 0) > 0
+    }));
+    this._handleMessage({
+      type: 'room_list',
+      rooms: list,
+      stats: { onlineCount: Math.max(1, list.length + 1), roomCount: list.length }
+    });
+  }
+
+  _createFallbackRoom(payload) {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let roomId = '';
+    for (let i = 0; i < 5; i++) {
+      roomId += chars[Math.floor(Math.random() * chars.length)];
+    }
+
+    const room = {
+      roomId,
+      hostClientId: this.clientId,
+      hostName: payload.playerName || 'Chủ Phòng',
+      hostPageNumber: payload.pageNumber || 1,
+      hostDateHeader: payload.dateHeader || '',
+      subMode: payload.subMode || '1v1',
+      blockTwoEnds: Boolean(payload.blockTwoEnds),
+      activeSymbols: ['X', 'O'],
+      currentTurnSymbol: 'X',
+      turnIndex: 0,
+      moves: [],
+      archivedGames: payload.archivedGames || [],
+      activeGameId: `local_online_${Date.now()}`,
+      updatedAt: Date.now(),
+      players: [
+        {
+          clientId: this.clientId,
+          name: payload.playerName || 'Chủ Phòng',
+          symbol: 'X',
+          isHost: true
+        }
+      ]
+    };
+    this.localFallbackRooms.set(roomId, room);
+    this.roomState = room;
+    this._saveRoomsToLocalStorage();
+    this._broadcastFallback({ type: 'sync_room', room });
+    this._handleMessage({ type: 'room_state', room });
+    this._emitFallbackRoomList();
+  }
+
   _processFallbackAction(payload) {
     switch (payload.type) {
-      case 'create_room':
+      case 'create_room': {
+        this._createFallbackRoom(payload);
+        break;
+      }
+
       case 'quick_match': {
-        const roomId = Math.random().toString(36).slice(2, 7).toUpperCase();
-        const room = {
-          roomId,
-          hostClientId: this.clientId,
-          hostName: payload.playerName || 'Chủ Phòng',
-          hostPageNumber: payload.pageNumber || 1,
-          hostDateHeader: payload.dateHeader || '',
-          subMode: payload.subMode || '1v1',
-          blockTwoEnds: Boolean(payload.blockTwoEnds),
-          activeSymbols: ['X', 'O'],
-          currentTurnSymbol: 'X',
-          turnIndex: 0,
-          moves: [],
-          archivedGames: payload.archivedGames || [],
-          activeGameId: `local_online_${Date.now()}`,
-          players: [
-            {
-              clientId: this.clientId,
-              name: payload.playerName || 'Chủ Phòng',
-              symbol: 'X',
-              isHost: true
-            }
-          ]
-        };
-        this.localFallbackRooms.set(roomId, room);
-        this.roomState = room;
-        this._broadcastFallback({ type: 'sync_room', room });
-        this._handleMessage({ type: 'room_state', room });
+        this._loadRoomsFromLocalStorage();
+        const desiredMode = payload.subMode || '1v1';
+        const allRooms = Array.from(this.localFallbackRooms.values());
+        let target =
+          allRooms.find(r => r.subMode === desiredMode && this._isFallbackRoomJoinable(r)) ||
+          allRooms.find(r => this._isFallbackRoomJoinable(r));
+
+        if (target) {
+          this._processFallbackAction({
+            type: 'join_room',
+            roomId: target.roomId,
+            playerName: payload.playerName
+          });
+        } else {
+          this._createFallbackRoom(payload);
+        }
         break;
       }
 
       case 'list_rooms': {
+        this._loadRoomsFromLocalStorage();
         this._broadcastFallback({ type: 'query_rooms', requester: this.clientId });
-        const list = Array.from(this.localFallbackRooms.values()).map(r => ({
-          roomId: r.roomId,
-          hostName: r.hostName,
-          hostPageNumber: r.hostPageNumber,
-          subMode: r.subMode,
-          playerCount: r.players.length,
-          archivedCount: r.archivedGames.length,
-          inProgress: r.moves.length > 0
-        }));
-        this._handleMessage({ type: 'room_list', rooms: list, stats: { onlineCount: list.length + 1, roomCount: list.length } });
+        this._emitFallbackRoomList();
         break;
       }
 
       case 'join_room': {
-        const r = this.localFallbackRooms.get(payload.roomId);
-        if (!r) {
-          this._broadcastFallback({
-            type: 'request_join',
-            roomId: payload.roomId,
-            clientId: this.clientId,
-            playerName: payload.playerName || 'Người chơi'
-          });
+        this._loadRoomsFromLocalStorage();
+        const cleanId = String(payload.roomId || '').trim().toUpperCase();
+        const r = this.localFallbackRooms.get(cleanId);
+        if (r && r.hostClientId === this.clientId) {
+          this._addPlayerToFallbackRoom(r, this.clientId, payload.playerName || 'Người chơi');
           return;
         }
-        this._addPlayerToFallbackRoom(r, this.clientId, payload.playerName || 'Người chơi');
+        // Gửi yêu cầu vào phòng tới Chủ phòng (qua cả BroadcastChannel + Cloud MQTT Relay)
+        this._broadcastFallback({
+          type: 'request_join',
+          roomId: cleanId,
+          clientId: this.clientId,
+          playerName: payload.playerName || 'Người chơi'
+        });
+        if (r) {
+          this._addPlayerToFallbackRoom(r, this.clientId, payload.playerName || 'Người chơi');
+        }
+        break;
+      }
+
+      case 'leave_room': {
+        if (!this.roomState) return;
+        const leavingRoomId = this.roomState.roomId;
+        const r = this.localFallbackRooms.get(leavingRoomId) || this.roomState;
+        r.players = (r.players || []).filter(p => p.clientId !== this.clientId);
+
+        if (r.players.length === 0) {
+          this.localFallbackRooms.delete(leavingRoomId);
+          this._saveRoomsToLocalStorage();
+          this._broadcastFallback({ type: 'room_closed', roomId: leavingRoomId });
+        } else {
+          if (r.hostClientId === this.clientId) {
+            r.hostClientId = r.players[0].clientId;
+            r.hostName = r.players[0].name;
+            r.players[0].isHost = true;
+          }
+          r.updatedAt = Date.now();
+          this.localFallbackRooms.set(leavingRoomId, r);
+          this._saveRoomsToLocalStorage();
+          this._broadcastFallback({ type: 'sync_room', room: r });
+        }
+        this.roomState = null;
+        this._emitFallbackRoomList();
         break;
       }
 
@@ -422,6 +777,10 @@ export class MultiplayerClient {
         this.roomState.archivedGames = payload.archivedGames || [];
         this.roomState.moves = [];
         this.roomState.turnIndex = 0;
+        this.roomState.updatedAt = Date.now();
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
+
         const msg = {
           type: 'host_page_changed',
           pageNumber: payload.pageNumber,
@@ -430,6 +789,7 @@ export class MultiplayerClient {
         };
         this._broadcastFallback(msg);
         this._handleMessage(msg);
+        this._emitFallbackRoomList();
         break;
       }
 
@@ -437,8 +797,12 @@ export class MultiplayerClient {
         if (!this.roomState || this.roomState.hostClientId !== this.clientId) return;
         if (payload.blockTwoEnds !== undefined) this.roomState.blockTwoEnds = Boolean(payload.blockTwoEnds);
         if (payload.subMode) this.roomState.subMode = payload.subMode;
+        this.roomState.updatedAt = Date.now();
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
         this._broadcastFallback({ type: 'sync_room', room: this.roomState });
         this._handleMessage({ type: 'room_state', room: this.roomState });
+        this._emitFallbackRoomList();
         break;
       }
 
@@ -448,6 +812,9 @@ export class MultiplayerClient {
         if (me) {
           me.symbol = payload.symbol;
           this._recomputeFallbackActiveSymbols(this.roomState);
+          this.roomState.updatedAt = Date.now();
+          this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+          this._saveRoomsToLocalStorage();
           this._broadcastFallback({ type: 'sync_room', room: this.roomState });
           this._handleMessage({ type: 'room_state', room: this.roomState });
         }
@@ -491,6 +858,7 @@ export class MultiplayerClient {
 
         this.roomState.turnIndex = (this.roomState.turnIndex + 1) % this.roomState.activeSymbols.length;
         this.roomState.currentTurnSymbol = this.roomState.activeSymbols[this.roomState.turnIndex];
+        this.roomState.updatedAt = Date.now();
 
         const winCheck = checkWinAt(board, r, c, {
           blockTwoEnds: this.roomState.blockTwoEnds,
@@ -518,6 +886,9 @@ export class MultiplayerClient {
           this.roomState.moves = [];
           this.roomState.turnIndex = 0;
           this.roomState.currentTurnSymbol = this.roomState.activeSymbols[0];
+          this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+          this._saveRoomsToLocalStorage();
+
           const overMsg = {
             type: 'game_over',
             result: { winnerSymbol: me.symbol, winnerName: me.name, winLine: winCheck.line },
@@ -528,6 +899,8 @@ export class MultiplayerClient {
           return;
         }
 
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
         const moveMsg = { type: 'move_made', move: moveObj, room: this.roomState };
         this._broadcastFallback(moveMsg);
         this._handleMessage(moveMsg);
@@ -558,6 +931,10 @@ export class MultiplayerClient {
         this.roomState.moves = [];
         this.roomState.turnIndex = 0;
         this.roomState.currentTurnSymbol = this.roomState.activeSymbols[0];
+        this.roomState.updatedAt = Date.now();
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
+
         const overMsg = {
           type: 'game_over',
           result: { winnerSymbol: 'DRAW', winnerName: 'Chủ phòng đã khoanh vùng ván cờ' },
@@ -575,7 +952,7 @@ export class MultiplayerClient {
           type: 'chat_message',
           roomId: this.roomState.roomId,
           sender: me ? me.name : 'Người chơi',
-          symbol: me ? me.symbol : '•',
+          symbol: me ? me.symbol : '-',
           text: payload.text
         };
         this._broadcastFallback(chatMsg);
@@ -611,45 +988,95 @@ export class MultiplayerClient {
       }
       room.players.push({ clientId, name: playerName, symbol: sym, isHost: false });
     }
+    room.updatedAt = Date.now();
     this._recomputeFallbackActiveSymbols(room);
-    this.roomState = room;
+    this.localFallbackRooms.set(room.roomId, room);
+    this._saveRoomsToLocalStorage();
+    if (room.players.some(p => p.clientId === this.clientId)) {
+      this.roomState = room;
+    }
     this._broadcastFallback({ type: 'sync_room', room });
-    this._handleMessage({ type: 'room_state', room });
+    if (this.roomState && this.roomState.roomId === room.roomId) {
+      this._handleMessage({ type: 'room_state', room });
+    }
+    this._emitFallbackRoomList();
   }
 
   _broadcastFallback(msg) {
+    const envelope = {
+      ...msg,
+      _msgId: `${this.clientId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      _senderId: this.clientId
+    };
+    this.seenRelayMsgIds.add(envelope._msgId);
+
     if (this.bc) {
-      this.bc.postMessage(msg);
+      try {
+        this.bc.postMessage(envelope);
+      } catch (_) {}
+    }
+
+    try {
+      localStorage.setItem('caro_vn_coop_event', JSON.stringify(envelope));
+    } catch (_) {}
+
+    if (this.mqttWs && this.mqttConnected && this.mqttWs.readyState === WebSocket.OPEN) {
+      try {
+        const pkt = this._buildMqttPublishPacket(CLOUD_TOPIC, JSON.stringify(envelope));
+        this.mqttWs.send(pkt);
+      } catch (_) {}
     }
   }
 
   _handleFallbackChannelMessage(msg) {
     if (!msg) return;
+    if (msg._msgId) {
+      if (this.seenRelayMsgIds.has(msg._msgId)) return;
+      this.seenRelayMsgIds.add(msg._msgId);
+      if (this.seenRelayMsgIds.size > 600) {
+        const first = this.seenRelayMsgIds.values().next().value;
+        this.seenRelayMsgIds.delete(first);
+      }
+    }
+
     if (msg.type === 'query_rooms' && this.roomState && this.roomState.hostClientId === this.clientId) {
+      this.roomState.updatedAt = Date.now();
       this._broadcastFallback({ type: 'advertise_room', room: this.roomState });
     } else if (msg.type === 'advertise_room' && msg.room) {
+      msg.room.updatedAt = Date.now();
       this.localFallbackRooms.set(msg.room.roomId, msg.room);
-      const list = Array.from(this.localFallbackRooms.values()).map(r => ({
-        roomId: r.roomId,
-        hostName: r.hostName,
-        hostPageNumber: r.hostPageNumber,
-        subMode: r.subMode,
-        playerCount: r.players.length,
-        archivedCount: r.archivedGames.length,
-        inProgress: r.moves.length > 0
-      }));
-      this._handleMessage({ type: 'room_list', rooms: list, stats: { onlineCount: list.length + 1, roomCount: list.length } });
-    } else if (msg.type === 'request_join' && this.roomState && this.roomState.roomId === msg.roomId && this.roomState.hostClientId === this.clientId) {
+      this._saveRoomsToLocalStorage();
+      this._emitFallbackRoomList();
+    } else if (msg.type === 'room_closed' && msg.roomId) {
+      this.localFallbackRooms.delete(msg.roomId);
+      this._saveRoomsToLocalStorage();
+      this._emitFallbackRoomList();
+    } else if (
+      msg.type === 'request_join' &&
+      this.roomState &&
+      this.roomState.roomId === msg.roomId &&
+      this.roomState.hostClientId === this.clientId
+    ) {
       this._addPlayerToFallbackRoom(this.roomState, msg.clientId, msg.playerName);
     } else if (msg.type === 'sync_room' && msg.room) {
+      msg.room.updatedAt = Date.now();
       this.localFallbackRooms.set(msg.room.roomId, msg.room);
+      this._saveRoomsToLocalStorage();
+      this._emitFallbackRoomList();
+
       if (this.roomState && this.roomState.roomId === msg.room.roomId) {
         this._handleMessage({ type: 'room_state', room: msg.room });
-      } else if (msg.room.players.some(p => p.clientId === this.clientId)) {
+      } else if (msg.room.players?.some(p => p.clientId === this.clientId)) {
         this._handleMessage({ type: 'room_state', room: msg.room });
       }
-    } else if (['host_page_changed', 'move_made', 'game_over'].includes(msg.type) && msg.room && this.roomState?.roomId === msg.room.roomId) {
-      this._handleMessage(msg);
+    } else if (['host_page_changed', 'move_made', 'game_over'].includes(msg.type) && msg.room) {
+      msg.room.updatedAt = Date.now();
+      this.localFallbackRooms.set(msg.room.roomId, msg.room);
+      this._saveRoomsToLocalStorage();
+      this._emitFallbackRoomList();
+      if (this.roomState?.roomId === msg.room.roomId) {
+        this._handleMessage(msg);
+      }
     } else if (msg.type === 'chat_message' && this.roomState && msg.roomId === this.roomState.roomId) {
       this._handleMessage(msg);
     }

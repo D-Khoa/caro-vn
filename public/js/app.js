@@ -222,6 +222,16 @@ class CaroNotebookApp {
   _rebuildBoardStateFromPage() {
     this.deadSet = new Set();
     for (const archived of this.currentPageData.archivedGames || []) {
+      if (archived.moves && archived.moves.length > 0) {
+        const recomputed = computeGameFenceAndDeadZone(
+          archived.moves,
+          this.deadSet,
+          BOARD_ROWS,
+          BOARD_COLS
+        );
+        archived.deadCells = recomputed.deadCells;
+        archived.contours = recomputed.contours;
+      }
       for (const k of archived.deadCells || []) {
         this.deadSet.add(k);
       }
@@ -287,6 +297,11 @@ class CaroNotebookApp {
    * Xử lý khi chấm bút lên ô (r, c) của trang vở ô ly
    */
   async handleBoardClick(r, c) {
+    // Ngăn click nhầm theo quán tính ngay khoảnh khắc ván trước vừa kết thúc (< 350ms)
+    if (this.lastGameFinishedAt && Date.now() - this.lastGameFinishedAt < 350) {
+      return;
+    }
+
     const key = cellKey(r, c);
 
     if (this.deadSet.has(key)) {
@@ -371,7 +386,6 @@ class CaroNotebookApp {
       return true;
     }
 
-    await this.store.savePage(this.currentPageData);
     this.renderer.setState({
       pageData: this.currentPageData,
       activeBoard: this.activeBoard,
@@ -379,6 +393,7 @@ class CaroNotebookApp {
       currentTurnSymbol: this.getCurrentTurnSymbol()
     });
     this._updateGameplayUI();
+    await this.store.savePage(this.currentPageData);
     return false;
   }
 
@@ -386,8 +401,14 @@ class CaroNotebookApp {
     const activeGame = this.currentPageData.activeGame;
     if (!activeGame || !activeGame.moves || activeGame.moves.length === 0) return;
 
+    // Hủy mọi yêu cầu AI còn tồn đọng của ván cũ để tuyệt đối không đánh nhầm sang ván mới
+    this.aiRequestSeq++;
+    this.aiThinking = false;
+    this.lastGameFinishedAt = Date.now();
+
+    const finishedMoves = [...activeGame.moves];
     const { deadCells, contours } = computeGameFenceAndDeadZone(
-      activeGame.moves,
+      finishedMoves,
       this.deadSet,
       BOARD_ROWS,
       BOARD_COLS
@@ -407,13 +428,18 @@ class CaroNotebookApp {
       winnerSymbol,
       winnerName,
       winLine: winLine || null,
-      moves: activeGame.moves,
+      moves: finishedMoves,
       deadCells,
       contours,
       finishedAt: Date.now()
     });
 
     this.currentPageData.activeGame = this._createNewActiveGameObj();
+
+    // Cập nhật ngay lập tức trạng thái bàn cờ & vùng điểm chết trước khi await lưu IndexedDB
+    this._rebuildBoardStateFromPage();
+    this._updateGameplayUI();
+    this.sound.playFenceDraw();
 
     if (this.mode === 'pve') {
       if (winnerSymbol === this.humanSymbol) {
@@ -430,10 +456,6 @@ class CaroNotebookApp {
     }
 
     await this.store.savePage(this.currentPageData);
-    this.sound.playFenceDraw();
-
-    this._rebuildBoardStateFromPage();
-    this._updateGameplayUI();
 
     const bannerTitle = winnerSymbol === 'DRAW'
       ? `Ván #${gameNumber} Hòa Cờ!`
@@ -444,7 +466,7 @@ class CaroNotebookApp {
       `Đã khoanh viền điểm chết (${deadCells.length} ô). Chấm vào phần giấy trống còn lại để đánh tiếp ván mới!`
     );
 
-    // Nếu người chơi cầm O (Đi sau) trong chế độ PvE, máy tự động khai cuộc ván tiếp theo
+    // Nếu người chơi cầm O (Đi sau) trong chế độ PvE, máy tự động khai cuộc ván tiếp theo ở vùng giấy trống
     if (this.mode === 'pve' && this.humanSymbol === 'O') {
       this._triggerAIMove();
     }

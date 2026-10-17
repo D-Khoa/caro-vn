@@ -327,17 +327,18 @@ export class NotebookBoardRenderer {
         const { r, c } = parseCellKey(key);
         const x = this.marginLeft + c * this.cellSize;
         const y = this.marginTop + r * this.cellSize;
+        const pad = 2.2;
 
-        // Nền vùng đã khoanh (màu chì nhạt trên giấy cũ)
-        ctx.fillStyle = 'rgba(120, 113, 108, 0.14)';
-        ctx.fillRect(x, y, this.cellSize, this.cellSize);
+        // Nền vùng đã khoanh thu gọn bên trong ô (không lem ra vạch kẻ ô ly xung quanh)
+        ctx.fillStyle = 'rgba(120, 113, 108, 0.16)';
+        ctx.fillRect(x + pad, y + pad, this.cellSize - pad * 2, this.cellSize - pad * 2);
 
-        // Nét gạch chì chéo kiểu học sinh gạch bỏ vùng cờ cũ
-        ctx.strokeStyle = 'rgba(87, 83, 78, 0.22)';
+        // Nét gạch chì chéo kiểu học sinh gạch bỏ ô cờ cũ
+        ctx.strokeStyle = 'rgba(87, 83, 78, 0.25)';
         ctx.lineWidth = 0.8;
         ctx.beginPath();
-        ctx.moveTo(x + 3, y + this.cellSize - 3);
-        ctx.lineTo(x + this.cellSize - 3, y + 3);
+        ctx.moveTo(x + 4, y + this.cellSize - 4);
+        ctx.lineTo(x + this.cellSize - 4, y + 4);
         ctx.stroke();
       }
     }
@@ -349,9 +350,9 @@ export class NotebookBoardRenderer {
 
     this.pageData.archivedGames.forEach((game, idx) => {
       ctx.save();
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.42;
       for (const m of game.moves || []) {
-        this._drawSymbolInCell(ctx, m.r, m.c, m.symbol, false);
+        this._drawSymbolInCell(ctx, m.r, m.c, m.symbol, false, true);
       }
 
       if (game.winLine && game.winLine.length >= 2) {
@@ -379,8 +380,8 @@ export class NotebookBoardRenderer {
     const pts = contour.map((pt, idx) => {
       const baseX = this.marginLeft + pt.c * this.cellSize;
       const baseY = this.marginTop + pt.r * this.cellSize;
-      const jx = this._seededJitter(pt.r + seedIndex, pt.c + idx, 1.45);
-      const jy = this._seededJitter(pt.c + seedIndex, pt.r + idx, 1.45);
+      const jx = this._seededJitter(pt.r + seedIndex, pt.c + idx, 0.45);
+      const jy = this._seededJitter(pt.c + seedIndex, pt.r + idx, 0.45);
       return { x: baseX + jx, y: baseY + jy };
     });
 
@@ -388,8 +389,8 @@ export class NotebookBoardRenderer {
     for (let pass = 0; pass < 2; pass++) {
       ctx.beginPath();
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = pass === 0 ? 2.4 : 1.2;
-      ctx.globalAlpha = pass === 0 ? 0.88 : 0.48;
+      ctx.lineWidth = pass === 0 ? 2.1 : 1.0;
+      ctx.globalAlpha = pass === 0 ? 0.88 : 0.45;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
 
@@ -403,8 +404,8 @@ export class NotebookBoardRenderer {
       for (let i = 0; i < n; i++) {
         const curr = pts[i];
         const next = pts[(i + 1) % n];
-        const midX = (curr.x + next.x) / 2 + (pass * 0.65);
-        const midY = (curr.y + next.y) / 2 - (pass * 0.65);
+        const midX = (curr.x + next.x) / 2 + (pass * 0.4);
+        const midY = (curr.y + next.y) / 2 - (pass * 0.4);
         ctx.quadraticCurveTo(curr.x, curr.y, midX, midY);
       }
 
@@ -424,29 +425,30 @@ export class NotebookBoardRenderer {
       }
     }
 
+    // Đặt nhãn nhỏ gọn nằm BÊN TRONG ô đầu tiên của vùng khoanh (tuyệt đối không tràn sang ô trống bên ngoài)
     const x = this.marginLeft + topMove.c * this.cellSize + 2;
-    const y = Math.max(this.marginTop + 12, this.marginTop + topMove.r * this.cellSize - 2);
+    const y = this.marginTop + topMove.r * this.cellSize + 2;
     const resultLabel = game.winnerSymbol === 'DRAW'
-      ? `Ván #${gameNumber}: Hòa`
-      : `Ván #${gameNumber}: ${game.winnerSymbol || '?'} thắng`;
+      ? `#${gameNumber}:Hòa`
+      : `#${gameNumber}:${game.winnerSymbol || '?'}`;
 
     ctx.save();
-    ctx.font = 'bold 12px "Patrick Hand", cursive, sans-serif';
+    ctx.font = 'bold 10px "Patrick Hand", cursive, sans-serif';
     const textW = ctx.measureText(resultLabel).width;
-    const padX = 6;
-    const boxH = 16;
+    const padX = 3.5;
+    const boxH = 12;
 
-    ctx.fillStyle = '#fef08a';
+    ctx.fillStyle = 'rgba(254, 240, 138, 0.94)';
     ctx.strokeStyle = badgeColor;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.roundRect(x, y - boxH + 3, textW + padX * 2, boxH, 3);
+    ctx.roundRect(x, y, textW + padX * 2, boxH, 2.5);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = badgeColor;
     ctx.textBaseline = 'middle';
-    ctx.fillText(resultLabel, x + padX, y - boxH / 2 + 3.5);
+    ctx.fillText(resultLabel, x + padX, y + boxH / 2 + 0.5);
     ctx.restore();
   }
 
@@ -460,7 +462,7 @@ export class NotebookBoardRenderer {
         const sym = this.activeBoard[r][c];
         if (!sym) continue;
         const isLast = Boolean(lastMove && lastMove.r === r && lastMove.c === c);
-        this._drawSymbolInCell(ctx, r, c, sym, isLast);
+        this._drawSymbolInCell(ctx, r, c, sym, isLast, false);
       }
     }
 
@@ -469,7 +471,7 @@ export class NotebookBoardRenderer {
     }
   }
 
-  _drawSymbolInCell(ctx, r, c, symbol, isLastMove = false) {
+  _drawSymbolInCell(ctx, r, c, symbol, isLastMove = false, isArchived = false) {
     const x = this.marginLeft + c * this.cellSize;
     const y = this.marginTop + r * this.cellSize;
     const s = this.cellSize;
@@ -477,24 +479,27 @@ export class NotebookBoardRenderer {
 
     ctx.save();
 
-    if (isLastMove) {
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.28)';
+    if (!isArchived) {
+      ctx.fillStyle = isLastMove ? 'rgba(250, 204, 21, 0.32)' : 'rgba(255, 253, 245, 0.65)';
       ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
+    }
+
+    if (isLastMove) {
       ctx.strokeStyle = cfg.color;
-      ctx.lineWidth = 1.3;
+      ctx.lineWidth = 1.4;
       ctx.setLineDash([2, 2]);
       ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
       ctx.setLineDash([]);
     }
 
     ctx.strokeStyle = cfg.color;
-    ctx.lineWidth = Math.max(2.2, s * 0.1);
+    ctx.lineWidth = isArchived ? Math.max(1.8, s * 0.08) : Math.max(2.4, s * 0.105);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const pad = s * 0.2;
-    const j1 = this._seededJitter(r, c, 0.95);
-    const j2 = this._seededJitter(c, r, 0.95);
+    const pad = isArchived ? s * 0.25 : s * 0.19;
+    const j1 = this._seededJitter(r, c, 0.75);
+    const j2 = this._seededJitter(c, r, 0.75);
 
     if (symbol === 'X') {
       ctx.beginPath();

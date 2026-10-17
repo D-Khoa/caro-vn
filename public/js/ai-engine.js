@@ -50,17 +50,27 @@ export function getCandidateMoves(activeBoard, deadSet, radius = 2, maxCandidate
     }
   }
 
-  // Nếu bàn cờ của ván hiện tại chưa có quân nào, chọn ô trống gần tâm trang vở nhất (tránh vùng điểm chết)
+  // Nếu bàn cờ của ván hiện tại chưa có quân nào, chọn ô trống thoáng đãng nhất trên trang vở (tránh xa vùng điểm chết của ván cũ)
   if (occupied.length === 0) {
     const centerR = Math.floor(rows / 2);
     const centerC = Math.floor(cols / 2);
     const initialCandidates = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (!deadSet.has(cellKey(r, c))) {
-          const dist = Math.hypot(r - centerR, c - centerC);
-          initialCandidates.push({ r, c, score: -dist });
+    for (let r = 2; r < rows - 2; r++) {
+      for (let c = 2; c < cols - 2; c++) {
+        if (deadSet.has(cellKey(r, c))) continue;
+
+        let deadNearPenalty = 0;
+        for (let dr = -3; dr <= 3; dr++) {
+          for (let dc = -3; dc <= 3; dc++) {
+            if (deadSet.has(cellKey(r + dr, c + dc))) {
+              const cheb = Math.max(Math.abs(dr), Math.abs(dc));
+              deadNearPenalty += cheb <= 1 ? 50 : cheb === 2 ? 20 : 6;
+            }
+          }
         }
+
+        const dist = Math.hypot(r - centerR, c - centerC);
+        initialCandidates.push({ r, c, score: -dist - deadNearPenalty });
       }
     }
     initialCandidates.sort((a, b) => b.score - a.score);
@@ -80,7 +90,17 @@ export function getCandidateMoves(activeBoard, deadSet, radius = 2, maxCandidate
         const k = cellKey(nr, nc);
         if (deadSet.has(k)) continue;
 
-        const proximityBonus = Math.max(Math.abs(dr), Math.abs(dc)) === 1 ? 25 : 8;
+        let touchesOldFence = false;
+        for (let rr = -1; rr <= 1 && !touchesOldFence; rr++) {
+          for (let cc = -1; cc <= 1; cc++) {
+            if (deadSet.has(cellKey(nr + rr, nc + cc))) {
+              touchesOldFence = true;
+              break;
+            }
+          }
+        }
+
+        const proximityBonus = (Math.max(Math.abs(dr), Math.abs(dc)) === 1 ? 25 : 8) + (touchesOldFence ? 0 : 12);
         candidateMap.set(k, (candidateMap.get(k) || 0) + proximityBonus);
       }
     }

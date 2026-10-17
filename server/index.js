@@ -181,6 +181,43 @@ function getServerStats() {
   };
 }
 
+function getPublicRoomsList() {
+  const publicRooms = [];
+  for (const r of rooms.values()) {
+    publicRooms.push({
+      roomId: r.roomId,
+      hostName: r.hostName,
+      hostPageNumber: r.hostPageNumber,
+      subMode: r.subMode,
+      playerCount: r.players.size,
+      archivedCount: r.archivedGames.length,
+      inProgress: r.moves.length > 0
+    });
+    if (publicRooms.length >= 50) break;
+  }
+  return publicRooms;
+}
+
+function broadcastRoomListToAll() {
+  const payload = JSON.stringify({
+    type: 'room_list',
+    rooms: getPublicRoomsList(),
+    stats: getServerStats()
+  });
+  for (const cWs of clients.values()) {
+    if (cWs.readyState === 1) {
+      cWs.send(payload);
+    }
+  }
+}
+
+function isRoomJoinable(r) {
+  if (r.subMode === '1v1') return r.players.size < 2;
+  if (r.subMode === 'team') return r.players.size < 8;
+  if (r.subMode === 'ffa') return r.players.size < 4;
+  return r.players.size < 2;
+}
+
 function removeClientFromCurrentRoom(ws) {
   const roomId = ws.roomId;
   if (!roomId) return;
@@ -192,6 +229,7 @@ function removeClientFromCurrentRoom(ws) {
   room.players.delete(ws.clientId);
   if (room.players.size === 0) {
     rooms.delete(roomId);
+    broadcastRoomListToAll();
     return;
   }
 
@@ -208,6 +246,7 @@ function removeClientFromCurrentRoom(ws) {
     type: 'room_state',
     room: serializeRoom(room)
   });
+  broadcastRoomListToAll();
 }
 
 function createRoomForClient(ws, {
@@ -259,13 +298,15 @@ function createRoomForClient(ws, {
     type: 'room_state',
     room: serializeRoom(room)
   });
+  broadcastRoomListToAll();
   return room;
 }
 
 function joinExistingRoom(ws, roomId, playerName) {
-  const room = rooms.get(roomId);
+  const cleanId = String(roomId || '').trim().toUpperCase();
+  const room = rooms.get(cleanId);
   if (!room) {
-    sendJson(ws, { type: 'error_msg', message: `Không tìm thấy phòng #${roomId}!` });
+    sendJson(ws, { type: 'error_msg', message: `Không tìm thấy phòng #${cleanId}!` });
     return null;
   }
 
@@ -274,7 +315,7 @@ function joinExistingRoom(ws, roomId, playerName) {
   if (playerName) ws.playerName = String(playerName).slice(0, 28);
   const assignedSymbol = assignSymbolForNewPlayer(room);
 
-  ws.roomId = roomId;
+  ws.roomId = cleanId;
   room.players.set(ws.clientId, {
     clientId: ws.clientId,
     name: ws.playerName,
@@ -286,6 +327,7 @@ function joinExistingRoom(ws, roomId, playerName) {
     type: 'room_state',
     room: serializeRoom(room)
   });
+  broadcastRoomListToAll();
   return room;
 }
 
@@ -353,6 +395,12 @@ wss.on('connection', (ws) => {
     stats: getServerStats()
   });
 
+  sendJson(ws, {
+    type: 'room_list',
+    rooms: getPublicRoomsList(),
+    stats: getServerStats()
+  });
+
   ws.on('message', (rawBuf) => {
     let msg;
     try {
@@ -372,22 +420,9 @@ wss.on('connection', (ws) => {
       }
 
       case 'list_rooms': {
-        const publicRooms = [];
-        for (const r of rooms.values()) {
-          publicRooms.push({
-            roomId: r.roomId,
-            hostName: r.hostName,
-            hostPageNumber: r.hostPageNumber,
-            subMode: r.subMode,
-            playerCount: r.players.size,
-            archivedCount: r.archivedGames.length,
-            inProgress: r.moves.length > 0
-          });
-          if (publicRooms.length >= 30) break;
-        }
         sendJson(ws, {
           type: 'room_list',
-          rooms: publicRooms,
+          rooms: getPublicRoomsList(),
           stats: getServerStats()
         });
         break;
@@ -406,19 +441,20 @@ wss.on('connection', (ws) => {
       case 'quick_match': {
         const desiredMode = msg.subMode || '1v1';
         let targetRoom = null;
+        // Ưu tiên tìm bàn đúng thể thức đang chọn và còn chỗ
         for (const r of rooms.values()) {
-          if (r.subMode !== desiredMode) continue;
-          if (desiredMode === '1v1' && r.players.size < 2) {
+          if (r.subMode === desiredMode && isRoomJoinable(r)) {
             targetRoom = r;
             break;
           }
-          if (desiredMode === 'team' && r.players.size < 8) {
-            targetRoom = r;
-            break;
-          }
-          if (desiredMode === 'ffa' && r.players.size < 4) {
-            targetRoom = r;
-            break;
+        }
+        // Nếu chưa có bàn đúng thể thức, ghép vào bất kỳ bàn nào đang mở và còn chỗ
+        if (!targetRoom) {
+          for (const r of rooms.values()) {
+            if (isRoomJoinable(r)) {
+              targetRoom = r;
+              break;
+            }
           }
         }
 
@@ -467,6 +503,7 @@ wss.on('connection', (ws) => {
           hostName: room.hostName,
           room: serializeRoom(room)
         });
+        broadcastRoomListToAll();
         break;
       }
 
