@@ -79,7 +79,7 @@ body {
 #view-menu {
   align-items: center;
   justify-content: center;
-  padding: 18px 14px;
+  padding: 12px 14px;
 }
 
 .menu-notebook-cover {
@@ -137,11 +137,14 @@ body {
 
 .cover-content {
   flex: 1;
-  padding: 16px;
+  min-width: 0;
+  padding: 14px;
 }
 
 /* Khung viền hoa văn kem cổ điển trên bìa vở 9x */
 .cover-vintage-frame {
+  width: 100%;
+  min-width: 0;
   background: var(--paper-9x);
   background-image:
     radial-gradient(rgba(168, 140, 96, 0.14) 1px, transparent 0);
@@ -150,10 +153,10 @@ body {
   outline: 2px solid #d4a359;
   outline-offset: -7px;
   border-radius: 10px;
-  padding: 20px 18px;
+  padding: 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 11px;
   position: relative;
 }
 
@@ -162,8 +165,8 @@ body {
   position: absolute;
   top: 12px;
   right: 14px;
-  width: 68px;
-  height: 68px;
+  width: 66px;
+  height: 66px;
   border: 2.5px solid var(--ink-red);
   outline: 1px dashed var(--ink-red);
   outline-offset: -4px;
@@ -174,14 +177,15 @@ body {
   justify-content: center;
   transform: rotate(11deg);
   color: var(--ink-red);
-  background: rgba(254, 242, 242, 0.78);
+  background: rgba(254, 242, 242, 0.85);
   box-shadow: 0 2px 6px rgba(200, 30, 30, 0.15);
   pointer-events: none;
+  z-index: 3;
 }
 
 .stamp-score {
   font-family: var(--font-title);
-  font-size: 26px;
+  font-size: 25px;
   font-weight: 900;
   line-height: 0.95;
   border-bottom: 1.5px solid var(--ink-red);
@@ -189,7 +193,7 @@ body {
 }
 
 .stamp-note {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 700;
   text-align: center;
   line-height: 1.1;
@@ -200,42 +204,45 @@ body {
   font-size: 11px;
   font-weight: 700;
   color: #164e63;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
+  padding-right: 76px;
 }
 
 .cover-title {
   font-family: var(--font-title);
-  font-size: 34px;
+  font-size: 32px;
   font-weight: 900;
   color: #991b1b;
   text-shadow: 2px 2px 0 #fde68a;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
   line-height: 1.05;
+  padding-right: 76px;
 }
 
 .cover-subtitle {
   font-size: 12.5px;
   font-weight: 700;
   color: #1e3a8a;
-  margin-top: -6px;
+  margin-top: -5px;
+  padding-right: 70px;
 }
 
 /* Nhãn vở học sinh 9x có dán băng keo 2 góc */
 .student-notebook-label {
   background: #fffdf5;
-  padding: 6px;
+  padding: 5px;
   border-radius: 8px;
   border: 2.5px solid #1d4ed8;
   box-shadow: 2px 3px 0 rgba(30, 58, 138, 0.22);
   position: relative;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .tape-strip {
   position: absolute;
-  width: 46px;
-  height: 14px;
+  width: 44px;
+  height: 13px;
   background: rgba(253, 230, 138, 0.55);
   border: 1px solid rgba(217, 119, 6, 0.25);
   top: -6px;
@@ -243,37 +250,38 @@ body {
 }
 
 .tape-tl {
-  left: -8px;
+  left: -6px;
   transform: rotate(-18deg);
 }
 
 .tape-tr {
-  right: -8px;
+  right: -6px;
   transform: rotate(16deg);
 }
 
 .student-label-inner {
   border: 1.5px dashed #dc2626;
   border-radius: 5px;
-  padding: 8px 12px;
+  padding: 7px 11px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .label-header-title {
   text-align: center;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 800;
   color: #dc2626;
   letter-spacing: 1.5px;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .label-line {
-  font-size: 13.5px;
+  font-size: 13px;
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   border-bottom: 1.5px dotted #60a5fa;
   padding-bottom: 2px;
   color: #1e3a8a;
@@ -285,17 +293,19 @@ body {
 }
 
 .highlight-handwriting {
-  font-size: 15px;
+  font-size: 14.5px;
   color: var(--ink-purple);
 }
 
 .label-line-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #7c2d12;
-  padding-top: 4px;
+  padding-top: 3px;
 }
 
 /* Mảnh giấy nháp chọn nhanh đối thủ Máy & Màu bút */
@@ -303,14 +313,16 @@ body {
   background: #fef9c3;
   border: 1.5px dashed #b45309;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   box-shadow: 2px 2px 0 rgba(180, 83, 9, 0.16);
+  min-width: 0;
 }
 
 .quick-subbox {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
 }
 
 .subbox-row {
@@ -318,23 +330,32 @@ body {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12.5px;
   font-weight: 700;
   color: #451a03;
+  min-width: 0;
+}
+
+.subbox-row .clean-select {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
 }
 
 .clean-select,
 .clean-input {
   font-family: var(--font-hand);
-  padding: 6px 10px;
+  padding: 5px 9px;
   border-radius: 6px;
   border: 1.5px solid #1e3a8a;
   background: #fffef9;
   color: var(--ink-purple);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
   outline: none;
+  max-width: 100%;
 }
 
 .pill-radio-group {
@@ -346,7 +367,7 @@ body {
 .pill-radio {
   background: #fffef9;
   border: 1.5px solid #94a3b8;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
@@ -368,7 +389,7 @@ body {
 .menu-primary-actions {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 8px;
 }
 
 .btn-menu-main {
@@ -377,10 +398,10 @@ body {
   background: #fffef9;
   border: 2px solid #1e3a8a;
   border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
-  padding: 11px 15px;
+  padding: 9px 14px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   text-align: left;
   cursor: pointer;
   transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
@@ -408,18 +429,24 @@ body {
 }
 
 .btn-icon {
-  font-size: 28px;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.btn-text {
+  min-width: 0;
 }
 
 .btn-text strong {
   display: block;
-  font-size: 16px;
+  font-size: 15.5px;
   color: #1e3a8a;
 }
 
 .btn-text small {
-  font-size: 12.5px;
+  font-size: 12px;
   color: #475569;
+  display: block;
 }
 
 .menu-secondary-nav {
@@ -434,8 +461,8 @@ body {
   color: #fef08a;
   border: 2px solid #082f49;
   border-radius: 8px;
-  padding: 9px;
-  font-size: 13.5px;
+  padding: 8px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: 2px 2px 0 #082f49;
@@ -475,8 +502,20 @@ body {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.subpage-header > div:nth-child(2) {
+  flex: 1;
+  min-width: 220px;
+}
+
+.backup-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .subpage-header h2 {
@@ -502,6 +541,7 @@ body {
   font-weight: 800;
   cursor: pointer;
   box-shadow: 2px 2px 0 #92400e;
+  flex-shrink: 0;
 }
 
 .btn-back:hover {
@@ -1396,34 +1436,55 @@ body {
 
 @media (max-width: 600px) {
   #view-menu {
-    padding: 10px 8px;
+    padding: 8px 6px;
+  }
+
+  .cover-spine {
+    width: 18px;
+  }
+
+  .spine-staple {
+    left: 4px;
+    width: 4px;
   }
 
   .cover-content {
-    padding: 10px;
+    padding: 8px;
   }
 
   .cover-vintage-frame {
-    padding: 14px 12px;
+    padding: 12px 10px;
+    gap: 9px;
+  }
+
+  .cover-ministry-text {
+    font-size: 9.5px;
+    padding-right: 58px;
   }
 
   .cover-title {
-    font-size: 25px;
+    font-size: 23px;
+    padding-right: 58px;
+  }
+
+  .cover-subtitle {
+    font-size: 11px;
+    padding-right: 54px;
   }
 
   .teacher-stamp {
-    width: 54px;
-    height: 54px;
+    width: 52px;
+    height: 52px;
     top: 8px;
     right: 8px;
   }
 
   .stamp-score {
-    font-size: 20px;
+    font-size: 19px;
   }
 
   .stamp-note {
-    font-size: 8px;
+    font-size: 7.5px;
   }
 
   .button-row-2 {
@@ -1435,10 +1496,50 @@ body {
     gap: 5px;
   }
 
-  .btn-topbar,
-  .btn-page-step {
-    padding: 4px 7px;
+  .topbar-left,
+  .topbar-center,
+  .topbar-right {
+    gap: 4px;
+  }
+
+  .turn-pill {
     font-size: 11.5px;
+    padding: 2px 8px;
+  }
+
+  .page-indicator-box {
+    padding: 2px 6px;
+    font-size: 11.5px;
+  }
+
+  .page-indicator-box input {
+    width: 40px;
+    font-size: 11.5px;
+  }
+
+  .btn-topbar,
+  .btn-topbar-icon,
+  .btn-page-step {
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+
+  .game-minimal-footer {
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .toast-container {
+    bottom: 34px;
+    right: 8px;
+    left: 8px;
+  }
+
+  .toast-item {
+    font-size: 12px;
+    padding: 8px 10px;
   }
 
   .notebook-paper-scroll {

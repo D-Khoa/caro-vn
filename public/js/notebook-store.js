@@ -169,7 +169,9 @@ export class NotebookStore {
           }
         }
         const activeMovesCount = p.activeGame?.moves?.length || 0;
-        const usedRatio = Math.min(100, Math.round(((deadSet.size + activeMovesCount) / this.totalCellsPerPage) * 100));
+        const usedCells = deadSet.size + activeMovesCount;
+        const rawRatio = Math.round((usedCells / this.totalCellsPerPage) * 100);
+        const usedRatio = usedCells > 0 ? Math.max(1, Math.min(100, rawRatio)) : 0;
         totalFinishedGames += p.archivedGames.length;
         usedPagesCount++;
 

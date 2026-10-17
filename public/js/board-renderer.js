@@ -91,23 +91,23 @@ export class NotebookBoardRenderer {
   resize() {
     const dpr = window.devicePixelRatio || 1;
     const container = this.canvas.parentElement;
-    const availW = container ? Math.max(300, container.clientWidth - 20) : window.innerWidth - 28;
-    const availH = container ? Math.max(320, container.clientHeight - 20) : window.innerHeight - 135;
+    const availW = container ? Math.max(300, container.clientWidth - 16) : window.innerWidth - 24;
+    const availH = container ? Math.max(300, container.clientHeight - 16) : window.innerHeight - 140;
 
     const isMobile = window.innerWidth < 768;
-    this.marginLeft = isMobile ? 36 : 48;
-    this.marginTop = isMobile ? 50 : 58;
-    this.marginRight = isMobile ? 14 : 22;
-    this.marginBottom = isMobile ? 16 : 22;
+    this.marginLeft = isMobile ? 38 : 50;
+    this.marginTop = isMobile ? 48 : 54;
+    this.marginRight = isMobile ? 12 : 18;
+    this.marginBottom = isMobile ? 14 : 18;
 
     const fitCellW = Math.floor((availW - this.marginLeft - this.marginRight) / this.cols);
     const fitCellH = Math.floor((availH - this.marginTop - this.marginBottom) / this.rows);
 
     const baseCell = isMobile
       ? Math.max(22, Math.min(30, Math.max(fitCellW, 22)))
-      : Math.max(21, Math.min(32, Math.min(fitCellW, fitCellH) || 26));
+      : Math.max(19, Math.min(32, Math.min(fitCellW, fitCellH) || 24));
 
-    this.cellSize = Math.round(baseCell * this.zoomMultiplier);
+    this.cellSize = Math.floor(baseCell * this.zoomMultiplier);
 
     const logicalW = this.marginLeft + this.cols * this.cellSize + this.marginRight;
     const logicalH = this.marginTop + this.rows * this.cellSize + this.marginBottom;
@@ -154,22 +154,24 @@ export class NotebookBoardRenderer {
     ctx.fillStyle = paperGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Bóng gáy vở & 2 ghim sắt đóng vở bên trái
-    const spineGrad = ctx.createLinearGradient(0, 0, 22, 0);
-    spineGrad.addColorStop(0, 'rgba(62, 39, 35, 0.24)');
-    spineGrad.addColorStop(0.45, 'rgba(62, 39, 35, 0.06)');
+    // Gáy vở bên trái (dải băng keo vải xanh đen + 2 ghim sắt đóng vở)
+    ctx.fillStyle = '#133b4d';
+    ctx.fillRect(0, 0, 7, h);
+
+    const spineGrad = ctx.createLinearGradient(7, 0, 22, 0);
+    spineGrad.addColorStop(0, 'rgba(62, 39, 35, 0.2)');
     spineGrad.addColorStop(1, 'rgba(62, 39, 35, 0)');
     ctx.fillStyle = spineGrad;
-    ctx.fillRect(0, 0, 22, h);
+    ctx.fillRect(7, 0, 15, h);
 
-    // Vẽ 2 chiếc ghim sắt ở gáy vở
-    ctx.strokeStyle = '#64748b';
-    ctx.lineWidth = 2.5;
+    // 2 chiếc ghim sắt nằm đúng trên gáy vở
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(4, h * 0.26);
-    ctx.lineTo(4, h * 0.31);
-    ctx.moveTo(4, h * 0.69);
-    ctx.lineTo(4, h * 0.74);
+    ctx.moveTo(3.5, h * 0.25);
+    ctx.lineTo(3.5, h * 0.30);
+    ctx.moveTo(3.5, h * 0.70);
+    ctx.lineTo(3.5, h * 0.75);
     ctx.stroke();
 
     // 2. Vẽ phần đầu trang vở 9x (Ô Điểm 10 đỏ + Thứ ngày tháng + Số trang)
@@ -196,11 +198,11 @@ export class NotebookBoardRenderer {
 
     // Đường kẻ ngang đôi đậm dưới phần tiêu đề đầu trang
     ctx.strokeStyle = 'rgba(59, 108, 180, 0.65)';
-    ctx.lineWidth = 1.3;
+    ctx.lineWidth = 1.25;
     ctx.beginPath();
-    ctx.moveTo(0, this.marginTop - 7);
+    ctx.moveTo(7, this.marginTop - 7);
     ctx.lineTo(w, this.marginTop - 7);
-    ctx.moveTo(0, this.marginTop - 4);
+    ctx.moveTo(7, this.marginTop - 4);
     ctx.lineTo(w, this.marginTop - 4);
     ctx.stroke();
 
@@ -210,18 +212,18 @@ export class NotebookBoardRenderer {
 
     ctx.save();
 
-    // Con dấu điểm 10 đỏ nhỏ góc trái trên nếu trang đã có ván thắng
+    // Con dấu điểm 10 đỏ nhỏ gọn giữa gáy vở và lề đỏ
     if (archivedCount > 0) {
       ctx.save();
-      ctx.translate(22, 26);
-      ctx.rotate(-0.18);
-      ctx.strokeStyle = 'rgba(200, 30, 30, 0.8)';
-      ctx.lineWidth = 1.4;
+      ctx.translate(23, 25);
+      ctx.rotate(-0.16);
+      ctx.strokeStyle = 'rgba(200, 30, 30, 0.85)';
+      ctx.lineWidth = 1.3;
       ctx.beginPath();
-      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.arc(0, 0, 11.5, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.font = 'bold 13px "Patrick Hand", "Comic Sans MS", cursive';
-      ctx.fillStyle = 'rgba(200, 30, 30, 0.88)';
+      ctx.font = 'bold 11px "Patrick Hand", cursive, sans-serif';
+      ctx.fillStyle = 'rgba(200, 30, 30, 0.9)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('10đ', 0, 0);
@@ -229,34 +231,34 @@ export class NotebookBoardRenderer {
     }
 
     // Chữ viết tay mực tím/xanh dòng Thứ... ngày... tháng...
-    ctx.font = '700 16px "Patrick Hand", "Mali", cursive, sans-serif';
+    ctx.font = '700 15.5px "Patrick Hand", "Mali", cursive, sans-serif';
     ctx.fillStyle = '#2e1065';
-    ctx.fillText(dateStr, this.marginLeft + 10, 31);
+    ctx.fillText(dateStr, this.marginLeft + 10, 29);
 
     // Đường kẻ chấm dưới dòng ngày tháng
     ctx.setLineDash([2, 3]);
     ctx.strokeStyle = 'rgba(59, 108, 180, 0.5)';
     ctx.beginPath();
-    ctx.moveTo(this.marginLeft + 8, 36);
-    ctx.lineTo(Math.min(gridRight - 150, this.marginLeft + 290), 36);
+    ctx.moveTo(this.marginLeft + 8, 34);
+    ctx.lineTo(Math.min(gridRight - 150, this.marginLeft + 275), 34);
     ctx.stroke();
     ctx.setLineDash([]);
 
     // Ghi chú bút đỏ của học trò khi đã khoanh ván cũ
-    if (archivedCount > 0 && w > 620) {
-      ctx.font = '700 14px "Patrick Hand", "Mali", cursive, sans-serif';
+    if (archivedCount > 0 && w > 640) {
+      ctx.font = '700 13.5px "Patrick Hand", "Mali", cursive, sans-serif';
       ctx.fillStyle = '#b91c1c';
-      ctx.fillText(`(Đã khoanh ${archivedCount} ván • ${this.deadSet.size} ô chết)`, this.marginLeft + 300, 31);
+      ctx.fillText(`(Đã khoanh ${archivedCount} ván - ${this.deadSet.size} ô chết)`, this.marginLeft + 290, 29);
     }
 
     // Góc phải: Tên chủ vở & Số trang
-    ctx.font = '700 15px "Patrick Hand", "Mali", cursive, sans-serif';
+    ctx.font = '700 14.5px "Patrick Hand", "Mali", cursive, sans-serif';
     ctx.fillStyle = '#1e3a8a';
     ctx.textAlign = 'right';
     const rightHeader = this.ownerTitle
-      ? `${this.ownerTitle} • Trang ${pageNum}/200`
+      ? `${this.ownerTitle} | Trang ${pageNum}/200`
       : `Trang ${pageNum} / 200`;
-    ctx.fillText(rightHeader, gridRight - 4, 31);
+    ctx.fillText(rightHeader, gridRight - 4, 29);
     ctx.restore();
   }
 

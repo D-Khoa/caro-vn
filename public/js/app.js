@@ -927,10 +927,11 @@ class CaroNotebookApp {
     for (const g of page.archivedGames || []) {
       for (const k of g.deadCells || []) deadSet.add(k);
     }
-    const freePct = Math.max(0, Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100));
+    const rawFree = Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100);
+    const freePct = deadSet.size > 0 ? Math.min(99, Math.max(0, rawFree)) : 100;
     badge.textContent = page.archivedGames.length > 0
-      ? `Đã khoanh ${page.archivedGames.length} ván • Trống ${freePct}%`
-      : 'Giấy trắng (100% trống)';
+      ? `Đã khoanh ${page.archivedGames.length} ván | Trống ${freePct}%`
+      : 'Giấy trắng tinh (100% trống)';
   }
 
   _syncProfileAndSettingsUI() {
@@ -947,7 +948,7 @@ class CaroNotebookApp {
     if (mClass) mClass.textContent = this.profile.className || '12A1';
     if (mName) mName.textContent = this.profile.name || 'Học Sinh';
     if (mPage) mPage.textContent = `Trang ${this.currentPageNumber} / 200`;
-    if (mRule) mRule.textContent = `Luật chặn 2 đầu: ${this.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
+    if (mRule) mRule.textContent = `Chặn 2 đầu: ${this.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
 
     // Trang cài đặt
     const sName = document.getElementById('student-name-input');
@@ -999,7 +1000,7 @@ class CaroNotebookApp {
       } else if (this.mode === 'pvp-local') {
         modeDesc.textContent = `Chung màn (${this.localPlayerCount} người)`;
       } else if (this.mp?.roomState) {
-        modeDesc.textContent = `Phòng #${this.mp.roomState.roomId}`;
+        modeDesc.textContent = `Bàn #${this.mp.roomState.roomId}`;
       }
     }
 
@@ -1008,7 +1009,7 @@ class CaroNotebookApp {
       const isHost = this.mp.isHost();
       const canChangePage = isHost && (room.moves?.length || 0) === 0;
 
-      if (ownerPrefix) ownerPrefix.textContent = `Vở ${room.hostName} • Trang`;
+      if (ownerPrefix) ownerPrefix.textContent = `Vở ${room.hostName} | Trang`;
       if (pageInput) {
         pageInput.value = room.hostPageNumber || 1;
         pageInput.disabled = !canChangePage;
@@ -1032,16 +1033,18 @@ class CaroNotebookApp {
     const totalCells = BOARD_ROWS * BOARD_COLS;
     const activeCount = this.currentPageData?.activeGame?.moves?.length || 0;
     const deadCount = this.deadSet.size;
-    const freePercent = Math.max(0, Math.round(((totalCells - deadCount - activeCount) / totalCells) * 100));
+    const usedTotal = deadCount + activeCount;
+    const rawFree = Math.round(((totalCells - usedTotal) / totalCells) * 100);
+    const freePercent = usedTotal > 0 ? Math.min(99, Math.max(0, rawFree)) : 100;
 
     const pageStatsEl = document.getElementById('current-page-stats');
     if (pageStatsEl) {
       const archivedCount = this.currentPageData?.archivedGames?.length || 0;
-      pageStatsEl.textContent = `Đã khoanh: ${archivedCount} ván • Điểm chết: ${deadCount} ô • Trống: ${freePercent}%`;
+      pageStatsEl.textContent = `Đã khoanh: ${archivedCount} ván | Điểm chết: ${deadCount} ô | Trống: ${freePercent}%`;
     }
 
     if (moveCountEl) {
-      moveCountEl.textContent = `Nước đi: ${activeCount}`;
+      moveCountEl.textContent = `Nước thứ: ${activeCount}`;
     }
 
     if (this.renderer) {
@@ -1063,7 +1066,7 @@ class CaroNotebookApp {
 
     const summaryEl = document.getElementById('notebook-index-summary');
     if (summaryEl) {
-      summaryEl.textContent = `Đã viết trên ${overview.usedPagesCount} / 200 trang • Tổng cộng ${overview.totalFinishedGames} ván cờ đã được khoanh vùng điểm chết.`;
+      summaryEl.textContent = `Đã viết trên ${overview.usedPagesCount} / 200 trang — Tổng cộng ${overview.totalFinishedGames} ván cờ đã được khoanh vùng điểm chết.`;
     }
 
     const grid = document.getElementById('notebook-pages-grid');
@@ -1097,11 +1100,12 @@ class CaroNotebookApp {
     for (const g of selectedPageData.archivedGames || []) {
       for (const dc of g.deadCells || []) deadSet.add(dc);
     }
-    const freePct = Math.max(0, Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100));
+    const rawFree = Math.round(((BOARD_ROWS * BOARD_COLS - deadSet.size) / (BOARD_ROWS * BOARD_COLS)) * 100);
+    const freePct = deadSet.size > 0 ? Math.min(99, Math.max(0, rawFree)) : 100;
 
     document.getElementById('history-selected-page-title').textContent = `Trang ${this.historySelectedPage} / 200`;
     document.getElementById('history-selected-page-meta').textContent =
-      `Đã khoanh ${selectedPageData.archivedGames.length} ván • Trống ${freePct}%`;
+      `Đã khoanh ${selectedPageData.archivedGames.length} ván | Trống ${freePct}%`;
 
     const listEl = document.getElementById('history-page-games-list');
     if (listEl) {
@@ -1124,7 +1128,7 @@ class CaroNotebookApp {
                   <span>${timeStr}</span>
                 </div>
                 <div class="archived-item-sub">
-                  ${g.modeLabel} • ${g.moves?.length || 0} nước đi • Khoanh ${g.deadCells?.length || 0} ô điểm chết
+                  ${g.modeLabel} | ${g.moves?.length || 0} nước đi | Khoanh ${g.deadCells?.length || 0} ô điểm chết
                 </div>
               </div>
             `;
@@ -1139,7 +1143,7 @@ class CaroNotebookApp {
     if (!listEl) return;
 
     if (!rooms || rooms.length === 0) {
-      listEl.innerHTML = `<div class="hint-text">Chưa có phòng nào đang mở. Hãy chọn trang vở của bạn và bấm "Tạo Phòng Mới"!</div>`;
+      listEl.innerHTML = `<div class="hint-text">Chưa có bàn nào đang mở. Hãy chọn trang vở của bạn và bấm "Mở Bàn Mới"!</div>`;
       return;
     }
 
@@ -1150,8 +1154,8 @@ class CaroNotebookApp {
       const subLabel = r.subMode === 'team' ? 'Chia Phe X/O' : r.subMode === 'ffa' ? 'Hỗn Chiến 2–4' : 'Đấu 1v1';
       row.innerHTML = `
         <div>
-          <strong>Phòng #${r.roomId}</strong> • <span>${subLabel}</span>
-          <div class="hint-text">Vở của ${r.hostName} (Trang ${r.hostPageNumber || 1}/200) • ${r.playerCount} người • Đã khoanh ${r.archivedCount} ván</div>
+          <strong>Bàn #${r.roomId}</strong> — <span>${subLabel}</span>
+          <div class="hint-text">Vở của ${r.hostName} (Trang ${r.hostPageNumber || 1}/200) | ${r.playerCount} bạn | Đã khoanh ${r.archivedCount} ván</div>
         </div>
         <button type="button" class="btn-primary">Vào</button>
       `;
@@ -1178,7 +1182,7 @@ class CaroNotebookApp {
 
     document.getElementById('active-room-code').textContent = room.roomId;
     document.getElementById('active-room-title').textContent =
-      `Vở của ${room.hostName} • Trang ${room.hostPageNumber || 1} / 200 (Đã khoanh ${room.archivedGames?.length || 0} ván)`;
+      `Vở của ${room.hostName} — Trang ${room.hostPageNumber || 1} / 200 (Đã khoanh ${room.archivedGames?.length || 0} ván)`;
 
     const subModeLabel = room.subMode === 'team'
       ? 'Co-op Chia Phe (Đội X vs Đội O luân phiên)'
@@ -1186,7 +1190,7 @@ class CaroNotebookApp {
         ? 'Hỗn Chiến Nhiều Người (X, O, Δ, □)'
         : 'Đấu 1v1 Cổ Điển (+Khán giả)';
     document.getElementById('active-room-submode').textContent =
-      `${subModeLabel} • Luật chặn 2 đầu: ${room.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
+      `${subModeLabel} | Luật chặn 2 đầu: ${room.blockTwoEnds ? 'BẬT' : 'TẮT'}`;
 
     const isHost = this.mp.isHost();
     const hostControls = document.getElementById('host-room-controls');
@@ -1252,7 +1256,7 @@ class CaroNotebookApp {
     const log = document.getElementById('online-chat-log');
     if (!log) return;
     const div = document.createElement('div');
-    div.innerHTML = `<strong>[${symbol || '•'}] ${sender}:</strong> <span></span>`;
+    div.innerHTML = `<strong>[${symbol || '-'}] ${sender}:</strong> <span></span>`;
     div.querySelector('span').textContent = text;
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
@@ -1266,10 +1270,19 @@ class CaroNotebookApp {
     titleEl.textContent = title;
     subEl.textContent = subtitle;
     banner.classList.remove('hidden');
+    if (this.currentView === 'view-game' && this.renderer) {
+      this.renderer.resize();
+    }
   }
 
   _hideEndBanner() {
-    document.getElementById('game-end-banner')?.classList.add('hidden');
+    const banner = document.getElementById('game-end-banner');
+    if (banner && !banner.classList.contains('hidden')) {
+      banner.classList.add('hidden');
+      if (this.currentView === 'view-game' && this.renderer) {
+        this.renderer.resize();
+      }
+    }
   }
 
   _showToast(message, type = 'info') {
