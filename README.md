@@ -44,6 +44,13 @@ npm run start:cluster
 npm run benchmark
 ```
 
+## 📚 Tài liệu Kỹ thuật & Phát triển (SDLC & Changelog)
+
+Để phát triển thêm tính năng mới, bảo trì hoặc tìm hiểu sâu về kiến trúc hệ thống, vui lòng tham khảo bộ tài liệu chuẩn hóa của dự án:
+
+- 📘 **[Tài liệu Vòng đời Phát triển Phần mềm (SDLC.md)](./SDLC.md)**: Phân tích yêu cầu nghiệp vụ, sơ đồ kiến trúc hệ thống, cấu trúc dữ liệu IndexedDB, đặc tả giao thức Co-op WebSocket/MQTT Relay, **5 Bất biến kỹ thuật bắt buộc (Core Invariants)** và Playbook hướng dẫn mở rộng tính năng mới.
+- 📝 **[Nhật ký Thay đổi (CHANGELOG.md)](./CHANGELOG.md)**: Lịch sử chi tiết các phiên bản (`v1.0.0` → `v1.3.1`), các bản vá lỗi khoanh vùng đa ván, giao diện Học Trò 9x và kiểm thử đa tác tử Co-op.
+
 ---
 
 ## 📜 Bản quyền & Sở hữu trí tuệ
