@@ -84,8 +84,20 @@ function createEmptyBoard() {
 function buildDeadSetFromArchived(archivedGames = []) {
   const set = new Set();
   for (const g of archivedGames) {
-    if (Array.isArray(g.deadCells)) {
+    if (Array.isArray(g.deadCells) && g.deadCells.length > 0) {
       for (const k of g.deadCells) set.add(k);
+    } else if (Array.isArray(g.moves) && g.moves.length > 0) {
+      const { deadCells, contours } = computeGameFenceAndDeadZone(
+        g.moves,
+        set,
+        BOARD_ROWS,
+        BOARD_COLS
+      );
+      g.deadCells = deadCells;
+      if (!Array.isArray(g.contours) || g.contours.length === 0) {
+        g.contours = contours;
+      }
+      for (const k of deadCells) set.add(k);
     }
   }
   return set;
@@ -102,6 +114,42 @@ function getActiveSymbolsForRoom(room) {
     return present.length >= 2 ? present : ['X', 'O'];
   }
   return ['X', 'O'];
+}
+
+function recomputeRoomTurnState(room) {
+  const prevList = Array.isArray(room.activeSymbols) && room.activeSymbols.length > 0
+    ? [...room.activeSymbols]
+    : ['X', 'O'];
+  const prevSym = room.currentTurnSymbol || prevList[room.turnIndex % prevList.length] || 'X';
+  const nextList = getActiveSymbolsForRoom(room);
+  room.activeSymbols = nextList;
+
+  if (!room.moves || room.moves.length === 0) {
+    room.currentTurnSymbol = nextList[0] || 'X';
+    room.turnIndex = 0;
+    return;
+  }
+
+  if (nextList.includes(prevSym)) {
+    room.currentTurnSymbol = prevSym;
+    room.turnIndex = nextList.indexOf(prevSym);
+    return;
+  }
+
+  // Nếu phe đang tới lượt vừa rời phòng trong chế độ Hỗn Chiến (FFA), chuyển sang phe kế tiếp theo vòng
+  const oldIdx = prevList.indexOf(prevSym);
+  let chosen = nextList[0] || 'X';
+  if (oldIdx >= 0) {
+    for (let step = 1; step <= prevList.length; step++) {
+      const candidate = prevList[(oldIdx + step) % prevList.length];
+      if (nextList.includes(candidate)) {
+        chosen = candidate;
+        break;
+      }
+    }
+  }
+  room.currentTurnSymbol = chosen;
+  room.turnIndex = Math.max(0, nextList.indexOf(chosen));
 }
 
 function assignSymbolForNewPlayer(room) {
@@ -134,13 +182,19 @@ function assignSymbolForNewPlayer(room) {
 }
 
 function serializeRoom(room) {
-  const activeSymbols = getActiveSymbolsForRoom(room);
-  const currentTurnSymbol = activeSymbols[room.turnIndex % activeSymbols.length] || 'X';
+  const activeSymbols = Array.isArray(room.activeSymbols) && room.activeSymbols.length > 0
+    ? room.activeSymbols
+    : getActiveSymbolsForRoom(room);
+  const currentTurnSymbol = room.currentTurnSymbol && activeSymbols.includes(room.currentTurnSymbol)
+    ? room.currentTurnSymbol
+    : (activeSymbols[room.turnIndex % activeSymbols.length] || 'X');
 
   return {
     roomId: room.roomId,
     hostClientId: room.hostClientId,
     hostName: room.hostName,
+    pageOwnerClientId: room.pageOwnerClientId || room.hostClientId,
+    pageOwnerName: room.pageOwnerName || room.hostName,
     hostPageNumber: room.hostPageNumber,
     hostDateHeader: room.hostDateHeader,
     subMode: room.subMode,
@@ -187,6 +241,7 @@ function getPublicRoomsList() {
     publicRooms.push({
       roomId: r.roomId,
       hostName: r.hostName,
+      pageOwnerName: r.pageOwnerName || r.hostName,
       hostPageNumber: r.hostPageNumber,
       subMode: r.subMode,
       playerCount: r.players.size,
@@ -212,10 +267,13 @@ function broadcastRoomListToAll() {
 }
 
 function isRoomJoinable(r) {
-  if (r.subMode === '1v1') return r.players.size < 2;
-  if (r.subMode === 'team') return r.players.size < 8;
-  if (r.subMode === 'ffa') return r.players.size < 4;
-  return r.players.size < 2;
+  const activeCount = Array.from(r.players.values()).filter(
+    p => p.symbol && p.symbol !== 'SPECTATOR'
+  ).length;
+  if (r.subMode === '1v1') return activeCount < 2;
+  if (r.subMode === 'team') return activeCount < 8;
+  if (r.subMode === 'ffa') return activeCount < 4;
+  return activeCount < 2;
 }
 
 function removeClientFromCurrentRoom(ws) {
@@ -226,6 +284,7 @@ function removeClientFromCurrentRoom(ws) {
   const room = rooms.get(roomId);
   if (!room) return;
 
+  const leavingPlayer = room.players.get(ws.clientId);
   room.players.delete(ws.clientId);
   if (room.players.size === 0) {
     rooms.delete(roomId);
@@ -233,18 +292,24 @@ function removeClientFromCurrentRoom(ws) {
     return;
   }
 
+  let newHostNotice = null;
   // Nếu chủ phòng rời đi, nhường quyền chủ phòng cho người tiếp theo trong phòng
+  // Lưu ý: pageOwnerClientId & pageOwnerName giữ nguyên của tờ giấy đang mở để không ghi đè nhầm vào vở của Chủ phòng mới!
   if (room.hostClientId === ws.clientId) {
     const nextHost = room.players.values().next().value;
     if (nextHost) {
       room.hostClientId = nextHost.clientId;
       room.hostName = nextHost.name;
+      newHostNotice = `${leavingPlayer ? leavingPlayer.name : 'Chủ phòng'} đã rời bàn. ${nextHost.name} trở thành Chủ phòng mới!`;
     }
   }
 
+  recomputeRoomTurnState(room);
+
   broadcastToRoom(room, {
     type: 'room_state',
-    room: serializeRoom(room)
+    room: serializeRoom(room),
+    notice: newHostNotice || (leavingPlayer ? `${leavingPlayer.name} đã rời bàn học.` : null)
   });
   broadcastRoomListToAll();
 }
@@ -269,6 +334,8 @@ function createRoomForClient(ws, {
     roomId,
     hostClientId: ws.clientId,
     hostName,
+    pageOwnerClientId: ws.clientId,
+    pageOwnerName: hostName,
     hostPageNumber: safePageNum,
     hostDateHeader: dateHeader || '',
     subMode: ['1v1', 'team', 'ffa'].includes(subMode) ? subMode : '1v1',
@@ -276,9 +343,11 @@ function createRoomForClient(ws, {
     archivedGames: safeArchived,
     deadSet,
     activeBoard: createEmptyBoard(),
-    activeGameId: `online_${Date.now()}`,
+    activeGameId: `online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
     moves: [],
     turnIndex: 0,
+    activeSymbols: ['X', 'O'],
+    currentTurnSymbol: 'X',
     players: new Map(),
     createdAt: Date.now()
   };
@@ -292,6 +361,7 @@ function createRoomForClient(ws, {
     ws
   });
 
+  recomputeRoomTurnState(room);
   rooms.set(roomId, room);
 
   sendJson(ws, {
@@ -310,6 +380,20 @@ function joinExistingRoom(ws, roomId, playerName) {
     return null;
   }
 
+  // Nếu người chơi đã ở sẵn trong chính phòng này, không xóa khỏi phòng tránh lỗi tự hủy phòng!
+  if (ws.roomId === cleanId && room.players.has(ws.clientId)) {
+    if (playerName) {
+      ws.playerName = String(playerName).slice(0, 28);
+      const existing = room.players.get(ws.clientId);
+      if (existing) existing.name = ws.playerName;
+    }
+    sendJson(ws, {
+      type: 'room_state',
+      room: serializeRoom(room)
+    });
+    return room;
+  }
+
   removeClientFromCurrentRoom(ws);
 
   if (playerName) ws.playerName = String(playerName).slice(0, 28);
@@ -322,6 +406,8 @@ function joinExistingRoom(ws, roomId, playerName) {
     symbol: assignedSymbol,
     ws
   });
+
+  recomputeRoomTurnState(room);
 
   broadcastToRoom(room, {
     type: 'room_state',
@@ -441,9 +527,9 @@ wss.on('connection', (ws) => {
       case 'quick_match': {
         const desiredMode = msg.subMode || '1v1';
         let targetRoom = null;
-        // Ưu tiên tìm bàn đúng thể thức đang chọn và còn chỗ
+        // Ưu tiên tìm bàn đúng thể thức đang chọn và còn chỗ (bỏ qua bàn hiện tại của chính mình)
         for (const r of rooms.values()) {
-          if (r.subMode === desiredMode && isRoomJoinable(r)) {
+          if (r.roomId !== ws.roomId && r.subMode === desiredMode && isRoomJoinable(r)) {
             targetRoom = r;
             break;
           }
@@ -451,7 +537,7 @@ wss.on('connection', (ws) => {
         // Nếu chưa có bàn đúng thể thức, ghép vào bất kỳ bàn nào đang mở và còn chỗ
         if (!targetRoom) {
           for (const r of rooms.values()) {
-            if (isRoomJoinable(r)) {
+            if (r.roomId !== ws.roomId && isRoomJoinable(r)) {
               targetRoom = r;
               break;
             }
@@ -460,6 +546,12 @@ wss.on('connection', (ws) => {
 
         if (targetRoom) {
           joinExistingRoom(ws, targetRoom.roomId, msg.playerName);
+        } else if (ws.roomId && rooms.has(ws.roomId)) {
+          const currentRoom = rooms.get(ws.roomId);
+          sendJson(ws, {
+            type: 'room_state',
+            room: serializeRoom(currentRoom)
+          });
         } else {
           createRoomForClient(ws, msg);
         }
@@ -489,18 +581,24 @@ wss.on('connection', (ws) => {
         const safePageNum = Math.max(1, Math.min(TOTAL_NOTEBOOK_PAGES, Number(msg.pageNumber) || 1));
         const safeArchived = Array.isArray(msg.archivedGames) ? msg.archivedGames.slice(0, 50) : [];
 
+        room.pageOwnerClientId = ws.clientId;
+        room.pageOwnerName = room.hostName;
         room.hostPageNumber = safePageNum;
         room.hostDateHeader = msg.dateHeader || '';
         room.archivedGames = safeArchived;
         room.deadSet = buildDeadSetFromArchived(safeArchived);
         room.activeBoard = createEmptyBoard();
+        room.activeGameId = `online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         room.moves = [];
         room.turnIndex = 0;
+        recomputeRoomTurnState(room);
 
         broadcastToRoom(room, {
           type: 'host_page_changed',
           pageNumber: safePageNum,
           hostName: room.hostName,
+          pageOwnerClientId: room.pageOwnerClientId,
+          pageOwnerName: room.pageOwnerName,
           room: serializeRoom(room)
         });
         broadcastRoomListToAll();
@@ -520,10 +618,12 @@ wss.on('connection', (ws) => {
         if (msg.subMode && ['1v1', 'team', 'ffa'].includes(msg.subMode)) {
           room.subMode = msg.subMode;
         }
+        recomputeRoomTurnState(room);
         broadcastToRoom(room, {
           type: 'room_state',
           room: serializeRoom(room)
         });
+        broadcastRoomListToAll();
         break;
       }
 
@@ -536,22 +636,34 @@ wss.on('connection', (ws) => {
         const targetSym = msg.symbol;
         const validSyms = room.subMode === 'ffa' ? [...SYMBOLS, 'SPECTATOR'] : ['X', 'O', 'SPECTATOR'];
         if (!validSyms.includes(targetSym)) break;
+        if (player.symbol === targetSym) break;
 
-        if (room.subMode === '1v1' && targetSym !== 'SPECTATOR') {
+        // Không cho phép người đang cầm bút đổi phe hoặc thoát sang Xem khi ván cờ đang đánh dở
+        if (room.moves.length > 0 && player.symbol !== 'SPECTATOR') {
+          sendJson(ws, {
+            type: 'error_msg',
+            message: 'Đang trong ván cờ, không thể đổi màu bút hoặc chuyển sang Xem!'
+          });
+          break;
+        }
+
+        if ((room.subMode === '1v1' || room.subMode === 'ffa') && targetSym !== 'SPECTATOR') {
           const occupied = Array.from(room.players.values()).some(
             p => p.clientId !== ws.clientId && p.symbol === targetSym
           );
           if (occupied) {
-            sendJson(ws, { type: 'error_msg', message: `Bút ${targetSym} đã có người cầm trong phòng 1v1!` });
+            sendJson(ws, { type: 'error_msg', message: `Bút ${targetSym} đã có người cầm trong bàn!` });
             break;
           }
         }
 
         player.symbol = targetSym;
+        recomputeRoomTurnState(room);
         broadcastToRoom(room, {
           type: 'room_state',
           room: serializeRoom(room)
         });
+        broadcastRoomListToAll();
         break;
       }
 
@@ -564,8 +676,23 @@ wss.on('connection', (ws) => {
           break;
         }
 
-        const activeSymbols = getActiveSymbolsForRoom(room);
-        const currentTurnSymbol = activeSymbols[room.turnIndex % activeSymbols.length] || 'X';
+        // Bắt buộc có ít nhất 2 phe đang cầm bút trong phòng mới cho phép đánh Co-op
+        const heldActiveSymbols = new Set(
+          Array.from(room.players.values())
+            .map(p => p.symbol)
+            .filter(sym => sym && sym !== 'SPECTATOR')
+        );
+        if (heldActiveSymbols.size < 2) {
+          sendJson(ws, {
+            type: 'error_msg',
+            message: 'Cần ít nhất 2 phe cầm bút trong bàn để bắt đầu giao đấu! Hãy đợi thêm bạn vào bàn.'
+          });
+          break;
+        }
+
+        recomputeRoomTurnState(room);
+        const activeSymbols = room.activeSymbols;
+        const currentTurnSymbol = room.currentTurnSymbol || activeSymbols[0] || 'X';
 
         if (player.symbol !== currentTurnSymbol) {
           sendJson(ws, { type: 'error_msg', message: `Chưa tới lượt của phe ${player.symbol}! (Đang là lượt ${currentTurnSymbol})` });
@@ -593,7 +720,11 @@ wss.on('connection', (ws) => {
           moveNumber: room.moves.length + 1
         };
         room.moves.push(moveObj);
-        room.turnIndex = (room.turnIndex + 1) % activeSymbols.length;
+
+        const curIdx = activeSymbols.indexOf(currentTurnSymbol);
+        const nextIdx = curIdx >= 0 ? (curIdx + 1) % activeSymbols.length : 0;
+        room.turnIndex = nextIdx;
+        room.currentTurnSymbol = activeSymbols[nextIdx] || 'X';
 
         // Kiểm tra chiến thắng
         const winCheck = checkWinAt(room.activeBoard, r, c, {
@@ -611,11 +742,12 @@ wss.on('connection', (ws) => {
             BOARD_COLS
           );
 
+          const ownerLabel = room.pageOwnerName || room.hostName;
           const archivedRecord = {
             id: room.activeGameId,
             gameIndexOnPage: room.archivedGames.length + 1,
             mode: 'pvp-online',
-            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
+            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${ownerLabel})`,
             blockTwoEnds: room.blockTwoEnds,
             winnerSymbol: player.symbol,
             winnerName: player.name,
@@ -632,18 +764,21 @@ wss.on('connection', (ws) => {
           // Khởi tạo ván tiếp theo ngay trên phần giấy trống còn lại của trang vở Chủ phòng
           room.activeBoard = createEmptyBoard();
           room.moves = [];
-          room.activeGameId = `online_${Date.now()}`;
+          room.activeGameId = `online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           room.turnIndex = 0;
+          recomputeRoomTurnState(room);
 
           broadcastToRoom(room, {
             type: 'game_over',
             result: {
+              id: archivedRecord.id,
               winnerSymbol: player.symbol,
               winnerName: player.name,
               winLine: winCheck.line
             },
             room: serializeRoom(room)
           });
+          broadcastRoomListToAll();
           break;
         }
 
@@ -657,11 +792,12 @@ wss.on('connection', (ws) => {
             BOARD_COLS
           );
 
-          room.archivedGames.push({
+          const ownerLabel = room.pageOwnerName || room.hostName;
+          const drawRecord = {
             id: room.activeGameId,
             gameIndexOnPage: room.archivedGames.length + 1,
             mode: 'pvp-online',
-            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
+            modeLabel: `Co-op Phòng #${room.roomId} (Vở ${ownerLabel})`,
             blockTwoEnds: room.blockTwoEnds,
             winnerSymbol: 'DRAW',
             winnerName: 'Hòa cờ',
@@ -670,22 +806,26 @@ wss.on('connection', (ws) => {
             deadCells,
             contours,
             finishedAt: Date.now()
-          });
+          };
+          room.archivedGames.push(drawRecord);
           for (const dc of deadCells) room.deadSet.add(dc);
 
           room.activeBoard = createEmptyBoard();
           room.moves = [];
-          room.activeGameId = `online_${Date.now()}`;
+          room.activeGameId = `online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           room.turnIndex = 0;
+          recomputeRoomTurnState(room);
 
           broadcastToRoom(room, {
             type: 'game_over',
             result: {
+              id: drawRecord.id,
               winnerSymbol: 'DRAW',
               winnerName: 'Hòa cờ'
             },
             room: serializeRoom(room)
           });
+          broadcastRoomListToAll();
           break;
         }
 
@@ -694,6 +834,9 @@ wss.on('connection', (ws) => {
           move: moveObj,
           room: serializeRoom(room)
         });
+        if (room.moves.length === 1) {
+          broadcastRoomListToAll();
+        }
         break;
       }
 
@@ -712,11 +855,12 @@ wss.on('connection', (ws) => {
           BOARD_COLS
         );
 
-        room.archivedGames.push({
+        const ownerLabel = room.pageOwnerName || room.hostName;
+        const fenceRecord = {
           id: room.activeGameId,
           gameIndexOnPage: room.archivedGames.length + 1,
           mode: 'pvp-online',
-          modeLabel: `Co-op Phòng #${room.roomId} (Vở ${room.hostName})`,
+          modeLabel: `Co-op Phòng #${room.roomId} (Vở ${ownerLabel})`,
           blockTwoEnds: room.blockTwoEnds,
           winnerSymbol: 'DRAW',
           winnerName: 'Chủ phòng khoanh sớm',
@@ -725,22 +869,26 @@ wss.on('connection', (ws) => {
           deadCells,
           contours,
           finishedAt: Date.now()
-        });
+        };
+        room.archivedGames.push(fenceRecord);
 
         for (const dc of deadCells) room.deadSet.add(dc);
         room.activeBoard = createEmptyBoard();
         room.moves = [];
-        room.activeGameId = `online_${Date.now()}`;
+        room.activeGameId = `online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         room.turnIndex = 0;
+        recomputeRoomTurnState(room);
 
         broadcastToRoom(room, {
           type: 'game_over',
           result: {
+            id: fenceRecord.id,
             winnerSymbol: 'DRAW',
             winnerName: 'Chủ phòng đã khoanh vùng ván cờ'
           },
           room: serializeRoom(room)
         });
+        broadcastRoomListToAll();
         break;
       }
 
@@ -753,6 +901,7 @@ wss.on('connection', (ws) => {
 
         broadcastToRoom(room, {
           type: 'chat_message',
+          clientId: ws.clientId,
           sender: player ? player.name : ws.playerName,
           symbol: player ? player.symbol : '•',
           text,

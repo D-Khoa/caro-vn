@@ -49,6 +49,14 @@ export class MultiplayerClient {
     this.pendingPayloads = [];
     this.localFallbackRooms = new Map();
     this.seenRelayMsgIds = new Set();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        if (this.roomState) {
+          this.leaveRoom();
+        }
+      });
+    }
   }
 
   setCustomWsUrl(url) {
@@ -535,6 +543,12 @@ export class MultiplayerClient {
     return Boolean(this.roomState && this.roomState.hostClientId === this.clientId);
   }
 
+  isPageOwner() {
+    if (!this.roomState) return false;
+    const ownerId = this.roomState.pageOwnerClientId || this.roomState.hostClientId;
+    return ownerId === this.clientId;
+  }
+
   _sendWhenReady(payload) {
     if (this.usingFallback) {
       this._processFallbackAction(payload);
@@ -575,7 +589,7 @@ export class MultiplayerClient {
       case 'room_state':
         this.roomState = msg.room;
         if (this.handlers.onRoomState) {
-          this.handlers.onRoomState(msg.room);
+          this.handlers.onRoomState(msg.room, msg.notice || null);
         }
         break;
 
@@ -585,7 +599,7 @@ export class MultiplayerClient {
           this.handlers.onHostPageChanged(msg);
         }
         if (this.handlers.onRoomState) {
-          this.handlers.onRoomState(msg.room);
+          this.handlers.onRoomState(msg.room, null);
         }
         break;
 
@@ -621,11 +635,11 @@ export class MultiplayerClient {
    * Chế độ Đồng bộ Đa Kênh (Cloud MQTT + BroadcastChannel + LocalStorage)
    * ============================================================================ */
   _isFallbackRoomJoinable(r) {
-    const count = r.players?.length || 0;
-    if (r.subMode === '1v1') return count < 2;
-    if (r.subMode === 'team') return count < 8;
-    if (r.subMode === 'ffa') return count < 4;
-    return count < 2;
+    const activeCount = (r.players || []).filter(p => p.symbol && p.symbol !== 'SPECTATOR').length;
+    if (r.subMode === '1v1') return activeCount < 2;
+    if (r.subMode === 'team') return activeCount < 8;
+    if (r.subMode === 'ffa') return activeCount < 4;
+    return activeCount < 2;
   }
 
   _emitFallbackRoomList() {
@@ -633,6 +647,7 @@ export class MultiplayerClient {
     const list = Array.from(this.localFallbackRooms.values()).map(r => ({
       roomId: r.roomId,
       hostName: r.hostName,
+      pageOwnerName: r.pageOwnerName || r.hostName,
       hostPageNumber: r.hostPageNumber,
       subMode: r.subMode,
       playerCount: r.players?.length || 1,
@@ -646,17 +661,52 @@ export class MultiplayerClient {
     });
   }
 
+  _leaveFallbackRoomInternal() {
+    if (!this.roomState) return;
+    const leavingRoomId = this.roomState.roomId;
+    const r = this.localFallbackRooms.get(leavingRoomId) || this.roomState;
+    const leavingPlayer = (r.players || []).find(p => p.clientId === this.clientId);
+    r.players = (r.players || []).filter(p => p.clientId !== this.clientId);
+
+    if (r.players.length === 0) {
+      this.localFallbackRooms.delete(leavingRoomId);
+      this._saveRoomsToLocalStorage();
+      this._broadcastFallback({ type: 'room_closed', roomId: leavingRoomId });
+    } else {
+      let notice = leavingPlayer ? `${leavingPlayer.name} đã rời bàn học.` : null;
+      if (r.hostClientId === this.clientId) {
+        r.hostClientId = r.players[0].clientId;
+        r.hostName = r.players[0].name;
+        r.players[0].isHost = true;
+        notice = `${leavingPlayer ? leavingPlayer.name : 'Chủ phòng'} đã rời bàn. ${r.players[0].name} trở thành Chủ phòng mới!`;
+      }
+      this._recomputeFallbackActiveSymbols(r);
+      r.updatedAt = Date.now();
+      this.localFallbackRooms.set(leavingRoomId, r);
+      this._saveRoomsToLocalStorage();
+      this._broadcastFallback({ type: 'sync_room', room: r, notice });
+    }
+    this.roomState = null;
+  }
+
   _createFallbackRoom(payload) {
+    if (this.roomState) {
+      this._leaveFallbackRoomInternal();
+    }
+
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let roomId = '';
     for (let i = 0; i < 5; i++) {
       roomId += chars[Math.floor(Math.random() * chars.length)];
     }
 
+    const hostName = payload.playerName || 'Chủ Phòng';
     const room = {
       roomId,
       hostClientId: this.clientId,
-      hostName: payload.playerName || 'Chủ Phòng',
+      hostName,
+      pageOwnerClientId: this.clientId,
+      pageOwnerName: hostName,
       hostPageNumber: payload.pageNumber || 1,
       hostDateHeader: payload.dateHeader || '',
       subMode: payload.subMode || '1v1',
@@ -666,12 +716,12 @@ export class MultiplayerClient {
       turnIndex: 0,
       moves: [],
       archivedGames: payload.archivedGames || [],
-      activeGameId: `local_online_${Date.now()}`,
+      activeGameId: `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       updatedAt: Date.now(),
       players: [
         {
           clientId: this.clientId,
-          name: payload.playerName || 'Chủ Phòng',
+          name: hostName,
           symbol: 'X',
           isHost: true
         }
@@ -695,20 +745,45 @@ export class MultiplayerClient {
       case 'quick_match': {
         this._loadRoomsFromLocalStorage();
         const desiredMode = payload.subMode || '1v1';
-        const allRooms = Array.from(this.localFallbackRooms.values());
-        let target =
-          allRooms.find(r => r.subMode === desiredMode && this._isFallbackRoomJoinable(r)) ||
-          allRooms.find(r => this._isFallbackRoomJoinable(r));
+        const myCurrentRoomId = this.roomState?.roomId || null;
 
-        if (target) {
+        const findCandidate = () => {
+          const allRooms = Array.from(this.localFallbackRooms.values()).filter(
+            r => r.roomId !== myCurrentRoomId
+          );
+          return (
+            allRooms.find(r => r.subMode === desiredMode && this._isFallbackRoomJoinable(r)) ||
+            allRooms.find(r => this._isFallbackRoomJoinable(r))
+          );
+        };
+
+        const immediateTarget = findCandidate();
+        if (immediateTarget) {
           this._processFallbackAction({
             type: 'join_room',
-            roomId: target.roomId,
+            roomId: immediateTarget.roomId,
             playerName: payload.playerName
           });
-        } else {
-          this._createFallbackRoom(payload);
+          break;
         }
+
+        // Hỏi các tab/máy khác qua BroadcastChannel + Cloud MQTT rồi đợi ngắn 250ms trước khi tự tạo phòng
+        this._broadcastFallback({ type: 'query_rooms', requester: this.clientId });
+        setTimeout(() => {
+          this._loadRoomsFromLocalStorage();
+          const delayedTarget = findCandidate();
+          if (delayedTarget) {
+            this._processFallbackAction({
+              type: 'join_room',
+              roomId: delayedTarget.roomId,
+              playerName: payload.playerName
+            });
+          } else if (this.roomState) {
+            this._handleMessage({ type: 'room_state', room: this.roomState });
+          } else {
+            this._createFallbackRoom(payload);
+          }
+        }, 250);
         break;
       }
 
@@ -722,46 +797,51 @@ export class MultiplayerClient {
       case 'join_room': {
         this._loadRoomsFromLocalStorage();
         const cleanId = String(payload.roomId || '').trim().toUpperCase();
+        if (!cleanId) return;
+
+        // Nếu đang ở sẵn trong chính phòng đó thì không rời phòng
+        if (this.roomState && this.roomState.roomId === cleanId) {
+          this._handleMessage({ type: 'room_state', room: this.roomState });
+          return;
+        }
+
+        if (this.roomState && this.roomState.roomId !== cleanId) {
+          this._leaveFallbackRoomInternal();
+        }
+
         const r = this.localFallbackRooms.get(cleanId);
-        if (r && r.hostClientId === this.clientId) {
+        if (r) {
           this._addPlayerToFallbackRoom(r, this.clientId, payload.playerName || 'Người chơi');
           return;
         }
-        // Gửi yêu cầu vào phòng tới Chủ phòng (qua cả BroadcastChannel + Cloud MQTT Relay)
+
+        // Gửi yêu cầu vào phòng tới Chủ phòng qua BroadcastChannel + Cloud MQTT Relay
         this._broadcastFallback({
           type: 'request_join',
           roomId: cleanId,
           clientId: this.clientId,
           playerName: payload.playerName || 'Người chơi'
         });
-        if (r) {
-          this._addPlayerToFallbackRoom(r, this.clientId, payload.playerName || 'Người chơi');
-        }
+
+        setTimeout(() => {
+          if (!this.roomState || this.roomState.roomId !== cleanId) {
+            this._loadRoomsFromLocalStorage();
+            const foundLate = this.localFallbackRooms.get(cleanId);
+            if (foundLate) {
+              this._addPlayerToFallbackRoom(foundLate, this.clientId, payload.playerName || 'Người chơi');
+            } else {
+              this._handleMessage({
+                type: 'error_msg',
+                message: `Không tìm thấy phòng #${cleanId}!`
+              });
+            }
+          }
+        }, 1500);
         break;
       }
 
       case 'leave_room': {
-        if (!this.roomState) return;
-        const leavingRoomId = this.roomState.roomId;
-        const r = this.localFallbackRooms.get(leavingRoomId) || this.roomState;
-        r.players = (r.players || []).filter(p => p.clientId !== this.clientId);
-
-        if (r.players.length === 0) {
-          this.localFallbackRooms.delete(leavingRoomId);
-          this._saveRoomsToLocalStorage();
-          this._broadcastFallback({ type: 'room_closed', roomId: leavingRoomId });
-        } else {
-          if (r.hostClientId === this.clientId) {
-            r.hostClientId = r.players[0].clientId;
-            r.hostName = r.players[0].name;
-            r.players[0].isHost = true;
-          }
-          r.updatedAt = Date.now();
-          this.localFallbackRooms.set(leavingRoomId, r);
-          this._saveRoomsToLocalStorage();
-          this._broadcastFallback({ type: 'sync_room', room: r });
-        }
-        this.roomState = null;
+        this._leaveFallbackRoomInternal();
         this._emitFallbackRoomList();
         break;
       }
@@ -772,11 +852,15 @@ export class MultiplayerClient {
           this._handleMessage({ type: 'error_msg', message: 'Hãy khoanh ván đang đánh trước khi đổi trang vở!' });
           return;
         }
+        this.roomState.pageOwnerClientId = this.clientId;
+        this.roomState.pageOwnerName = this.roomState.hostName;
         this.roomState.hostPageNumber = payload.pageNumber;
         this.roomState.hostDateHeader = payload.dateHeader || '';
         this.roomState.archivedGames = payload.archivedGames || [];
         this.roomState.moves = [];
+        this.roomState.activeGameId = `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         this.roomState.turnIndex = 0;
+        this._recomputeFallbackActiveSymbols(this.roomState);
         this.roomState.updatedAt = Date.now();
         this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
         this._saveRoomsToLocalStorage();
@@ -785,6 +869,8 @@ export class MultiplayerClient {
           type: 'host_page_changed',
           pageNumber: payload.pageNumber,
           hostName: this.roomState.hostName,
+          pageOwnerClientId: this.roomState.pageOwnerClientId,
+          pageOwnerName: this.roomState.pageOwnerName,
           room: this.roomState
         };
         this._broadcastFallback(msg);
@@ -795,8 +881,13 @@ export class MultiplayerClient {
 
       case 'host_update_settings': {
         if (!this.roomState || this.roomState.hostClientId !== this.clientId) return;
+        if (this.roomState.moves.length > 0) {
+          this._handleMessage({ type: 'error_msg', message: 'Không thể đổi luật khi đang đánh dở ván cờ!' });
+          return;
+        }
         if (payload.blockTwoEnds !== undefined) this.roomState.blockTwoEnds = Boolean(payload.blockTwoEnds);
         if (payload.subMode) this.roomState.subMode = payload.subMode;
+        this._recomputeFallbackActiveSymbols(this.roomState);
         this.roomState.updatedAt = Date.now();
         this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
         this._saveRoomsToLocalStorage();
@@ -809,15 +900,41 @@ export class MultiplayerClient {
       case 'switch_symbol': {
         if (!this.roomState) return;
         const me = this.roomState.players.find(p => p.clientId === this.clientId);
-        if (me) {
-          me.symbol = payload.symbol;
-          this._recomputeFallbackActiveSymbols(this.roomState);
-          this.roomState.updatedAt = Date.now();
-          this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
-          this._saveRoomsToLocalStorage();
-          this._broadcastFallback({ type: 'sync_room', room: this.roomState });
-          this._handleMessage({ type: 'room_state', room: this.roomState });
+        if (!me) return;
+
+        const targetSym = payload.symbol;
+        const validSyms = this.roomState.subMode === 'ffa' ? [...SYMBOLS, 'SPECTATOR'] : ['X', 'O', 'SPECTATOR'];
+        if (!validSyms.includes(targetSym) || me.symbol === targetSym) return;
+
+        if ((this.roomState.moves?.length || 0) > 0 && me.symbol !== 'SPECTATOR') {
+          this._handleMessage({
+            type: 'error_msg',
+            message: 'Đang trong ván cờ, không thể đổi màu bút hoặc chuyển sang Xem!'
+          });
+          return;
         }
+
+        if ((this.roomState.subMode === '1v1' || this.roomState.subMode === 'ffa') && targetSym !== 'SPECTATOR') {
+          const occupied = this.roomState.players.some(
+            p => p.clientId !== this.clientId && p.symbol === targetSym
+          );
+          if (occupied) {
+            this._handleMessage({
+              type: 'error_msg',
+              message: `Bút ${targetSym} đã có người cầm trong bàn!`
+            });
+            return;
+          }
+        }
+
+        me.symbol = targetSym;
+        this._recomputeFallbackActiveSymbols(this.roomState);
+        this.roomState.updatedAt = Date.now();
+        this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+        this._saveRoomsToLocalStorage();
+        this._broadcastFallback({ type: 'sync_room', room: this.roomState });
+        this._handleMessage({ type: 'room_state', room: this.roomState });
+        this._emitFallbackRoomList();
         break;
       }
 
@@ -825,11 +942,29 @@ export class MultiplayerClient {
         if (!this.roomState) return;
         const me = this.roomState.players.find(p => p.clientId === this.clientId);
         if (!me || me.symbol === 'SPECTATOR') {
-          this._handleMessage({ type: 'error_msg', message: 'Bạn đang là Khán giả!' });
+          this._handleMessage({ type: 'error_msg', message: 'Bạn đang là Khán giả, hãy chọn Phe để đánh!' });
           return;
         }
+
+        const heldActiveSymbols = new Set(
+          (this.roomState.players || [])
+            .map(p => p.symbol)
+            .filter(sym => sym && sym !== 'SPECTATOR')
+        );
+        if (heldActiveSymbols.size < 2) {
+          this._handleMessage({
+            type: 'error_msg',
+            message: 'Cần ít nhất 2 phe cầm bút trong bàn để bắt đầu giao đấu! Hãy đợi thêm bạn vào bàn.'
+          });
+          return;
+        }
+
+        this._recomputeFallbackActiveSymbols(this.roomState);
         if (me.symbol !== this.roomState.currentTurnSymbol) {
-          this._handleMessage({ type: 'error_msg', message: `Đang là lượt của phe ${this.roomState.currentTurnSymbol}!` });
+          this._handleMessage({
+            type: 'error_msg',
+            message: `Chưa tới lượt của phe ${me.symbol}! (Đang là lượt ${this.roomState.currentTurnSymbol})`
+          });
           return;
         }
 
@@ -839,9 +974,18 @@ export class MultiplayerClient {
 
         const deadSet = new Set();
         for (const g of this.roomState.archivedGames || []) {
-          for (const dc of g.deadCells || []) deadSet.add(dc);
+          if (Array.isArray(g.deadCells) && g.deadCells.length > 0) {
+            for (const dc of g.deadCells) deadSet.add(dc);
+          } else if (Array.isArray(g.moves) && g.moves.length > 0) {
+            const { deadCells } = computeGameFenceAndDeadZone(g.moves, deadSet, BOARD_ROWS, BOARD_COLS);
+            g.deadCells = deadCells;
+            for (const dc of deadCells) deadSet.add(dc);
+          }
         }
-        if (deadSet.has(cellKey(r, c))) return;
+        if (deadSet.has(cellKey(r, c))) {
+          this._handleMessage({ type: 'error_msg', message: 'Ô này thuộc vùng khoanh Điểm Chết của ván cũ!' });
+          return;
+        }
         if (this.roomState.moves.some(m => m.r === r && m.c === c)) return;
 
         const moveObj = {
@@ -856,8 +1000,10 @@ export class MultiplayerClient {
         const board = Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
         for (const m of this.roomState.moves) board[m.r][m.c] = m.symbol;
 
-        this.roomState.turnIndex = (this.roomState.turnIndex + 1) % this.roomState.activeSymbols.length;
-        this.roomState.currentTurnSymbol = this.roomState.activeSymbols[this.roomState.turnIndex];
+        const curIdx = this.roomState.activeSymbols.indexOf(this.roomState.currentTurnSymbol);
+        const nextIdx = curIdx >= 0 ? (curIdx + 1) % this.roomState.activeSymbols.length : 0;
+        this.roomState.turnIndex = nextIdx;
+        this.roomState.currentTurnSymbol = this.roomState.activeSymbols[nextIdx] || 'X';
         this.roomState.updatedAt = Date.now();
 
         const winCheck = checkWinAt(board, r, c, {
@@ -867,13 +1013,21 @@ export class MultiplayerClient {
           cols: BOARD_COLS
         });
 
+        const ownerLabel = this.roomState.pageOwnerName || this.roomState.hostName;
+
         if (winCheck.won) {
-          const { deadCells, contours } = computeGameFenceAndDeadZone(this.roomState.moves, deadSet, BOARD_ROWS, BOARD_COLS);
+          const { deadCells, contours } = computeGameFenceAndDeadZone(
+            this.roomState.moves,
+            deadSet,
+            BOARD_ROWS,
+            BOARD_COLS
+          );
+          const finishedId = this.roomState.activeGameId;
           this.roomState.archivedGames.push({
-            id: this.roomState.activeGameId,
+            id: finishedId,
             gameIndexOnPage: this.roomState.archivedGames.length + 1,
             mode: 'pvp-online',
-            modeLabel: `Co-op Phòng #${this.roomState.roomId} (Vở ${this.roomState.hostName})`,
+            modeLabel: `Co-op Phòng #${this.roomState.roomId} (Vở ${ownerLabel})`,
             blockTwoEnds: this.roomState.blockTwoEnds,
             winnerSymbol: me.symbol,
             winnerName: me.name,
@@ -884,18 +1038,71 @@ export class MultiplayerClient {
             finishedAt: Date.now()
           });
           this.roomState.moves = [];
+          this.roomState.activeGameId = `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
           this.roomState.turnIndex = 0;
-          this.roomState.currentTurnSymbol = this.roomState.activeSymbols[0];
+          this._recomputeFallbackActiveSymbols(this.roomState);
           this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
           this._saveRoomsToLocalStorage();
 
           const overMsg = {
             type: 'game_over',
-            result: { winnerSymbol: me.symbol, winnerName: me.name, winLine: winCheck.line },
+            result: {
+              id: finishedId,
+              winnerSymbol: me.symbol,
+              winnerName: me.name,
+              winLine: winCheck.line
+            },
             room: this.roomState
           };
           this._broadcastFallback(overMsg);
           this._handleMessage(overMsg);
+          this._emitFallbackRoomList();
+          return;
+        }
+
+        // Kiểm tra Hòa cờ khi hết ô trống trên trang vở
+        const remaining = countPlayableCells(board, deadSet, BOARD_ROWS, BOARD_COLS);
+        if (remaining === 0) {
+          const { deadCells, contours } = computeGameFenceAndDeadZone(
+            this.roomState.moves,
+            deadSet,
+            BOARD_ROWS,
+            BOARD_COLS
+          );
+          const finishedId = this.roomState.activeGameId;
+          this.roomState.archivedGames.push({
+            id: finishedId,
+            gameIndexOnPage: this.roomState.archivedGames.length + 1,
+            mode: 'pvp-online',
+            modeLabel: `Co-op Phòng #${this.roomState.roomId} (Vở ${ownerLabel})`,
+            blockTwoEnds: this.roomState.blockTwoEnds,
+            winnerSymbol: 'DRAW',
+            winnerName: 'Hòa cờ',
+            winLine: null,
+            moves: [...this.roomState.moves],
+            deadCells,
+            contours,
+            finishedAt: Date.now()
+          });
+          this.roomState.moves = [];
+          this.roomState.activeGameId = `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+          this.roomState.turnIndex = 0;
+          this._recomputeFallbackActiveSymbols(this.roomState);
+          this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
+          this._saveRoomsToLocalStorage();
+
+          const overMsg = {
+            type: 'game_over',
+            result: {
+              id: finishedId,
+              winnerSymbol: 'DRAW',
+              winnerName: 'Hòa cờ'
+            },
+            room: this.roomState
+          };
+          this._broadcastFallback(overMsg);
+          this._handleMessage(overMsg);
+          this._emitFallbackRoomList();
           return;
         }
 
@@ -904,6 +1111,9 @@ export class MultiplayerClient {
         const moveMsg = { type: 'move_made', move: moveObj, room: this.roomState };
         this._broadcastFallback(moveMsg);
         this._handleMessage(moveMsg);
+        if (this.roomState.moves.length === 1) {
+          this._emitFallbackRoomList();
+        }
         break;
       }
 
@@ -914,11 +1124,13 @@ export class MultiplayerClient {
           for (const dc of g.deadCells || []) deadSet.add(dc);
         }
         const { deadCells, contours } = computeGameFenceAndDeadZone(this.roomState.moves, deadSet, BOARD_ROWS, BOARD_COLS);
+        const finishedId = this.roomState.activeGameId;
+        const ownerLabel = this.roomState.pageOwnerName || this.roomState.hostName;
         this.roomState.archivedGames.push({
-          id: this.roomState.activeGameId,
+          id: finishedId,
           gameIndexOnPage: this.roomState.archivedGames.length + 1,
           mode: 'pvp-online',
-          modeLabel: `Co-op Phòng #${this.roomState.roomId} (Vở ${this.roomState.hostName})`,
+          modeLabel: `Co-op Phòng #${this.roomState.roomId} (Vở ${ownerLabel})`,
           blockTwoEnds: this.roomState.blockTwoEnds,
           winnerSymbol: 'DRAW',
           winnerName: 'Chủ phòng khoanh sớm',
@@ -929,19 +1141,25 @@ export class MultiplayerClient {
           finishedAt: Date.now()
         });
         this.roomState.moves = [];
+        this.roomState.activeGameId = `local_online_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         this.roomState.turnIndex = 0;
-        this.roomState.currentTurnSymbol = this.roomState.activeSymbols[0];
+        this._recomputeFallbackActiveSymbols(this.roomState);
         this.roomState.updatedAt = Date.now();
         this.localFallbackRooms.set(this.roomState.roomId, this.roomState);
         this._saveRoomsToLocalStorage();
 
         const overMsg = {
           type: 'game_over',
-          result: { winnerSymbol: 'DRAW', winnerName: 'Chủ phòng đã khoanh vùng ván cờ' },
+          result: {
+            id: finishedId,
+            winnerSymbol: 'DRAW',
+            winnerName: 'Chủ phòng đã khoanh vùng ván cờ'
+          },
           room: this.roomState
         };
         this._broadcastFallback(overMsg);
         this._handleMessage(overMsg);
+        this._emitFallbackRoomList();
         break;
       }
 
@@ -951,6 +1169,7 @@ export class MultiplayerClient {
         const chatMsg = {
           type: 'chat_message',
           roomId: this.roomState.roomId,
+          clientId: this.clientId,
           sender: me ? me.name : 'Người chơi',
           symbol: me ? me.symbol : '-',
           text: payload.text
@@ -963,13 +1182,44 @@ export class MultiplayerClient {
   }
 
   _recomputeFallbackActiveSymbols(room) {
+    const prevList = Array.isArray(room.activeSymbols) && room.activeSymbols.length > 0
+      ? [...room.activeSymbols]
+      : ['X', 'O'];
+    const prevSym = room.currentTurnSymbol || prevList[room.turnIndex % prevList.length] || 'X';
+
     if (room.subMode === 'ffa') {
-      const present = SYMBOLS.filter(s => room.players.some(p => p.symbol === s));
+      const present = SYMBOLS.filter(s => (room.players || []).some(p => p.symbol === s));
       room.activeSymbols = present.length >= 2 ? present : ['X', 'O'];
     } else {
       room.activeSymbols = ['X', 'O'];
     }
-    room.currentTurnSymbol = room.activeSymbols[room.turnIndex % room.activeSymbols.length] || 'X';
+
+    const nextList = room.activeSymbols;
+    if (!room.moves || room.moves.length === 0) {
+      room.currentTurnSymbol = nextList[0] || 'X';
+      room.turnIndex = 0;
+      return;
+    }
+
+    if (nextList.includes(prevSym)) {
+      room.currentTurnSymbol = prevSym;
+      room.turnIndex = nextList.indexOf(prevSym);
+      return;
+    }
+
+    const oldIdx = prevList.indexOf(prevSym);
+    let chosen = nextList[0] || 'X';
+    if (oldIdx >= 0) {
+      for (let step = 1; step <= prevList.length; step++) {
+        const candidate = prevList[(oldIdx + step) % prevList.length];
+        if (nextList.includes(candidate)) {
+          chosen = candidate;
+          break;
+        }
+      }
+    }
+    room.currentTurnSymbol = chosen;
+    room.turnIndex = Math.max(0, nextList.indexOf(chosen));
   }
 
   _addPlayerToFallbackRoom(room, clientId, playerName) {
@@ -1065,9 +1315,9 @@ export class MultiplayerClient {
       this._emitFallbackRoomList();
 
       if (this.roomState && this.roomState.roomId === msg.room.roomId) {
-        this._handleMessage({ type: 'room_state', room: msg.room });
+        this._handleMessage({ type: 'room_state', room: msg.room, notice: msg.notice || null });
       } else if (msg.room.players?.some(p => p.clientId === this.clientId)) {
-        this._handleMessage({ type: 'room_state', room: msg.room });
+        this._handleMessage({ type: 'room_state', room: msg.room, notice: msg.notice || null });
       }
     } else if (['host_page_changed', 'move_made', 'game_over'].includes(msg.type) && msg.room) {
       msg.room.updatedAt = Date.now();
