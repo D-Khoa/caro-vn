@@ -1,9 +1,9 @@
 /**
- * Engine vẽ Trang Vở Ô Ly Việt Nam trên HTML5 Canvas
- * - Tái hiện chân thực trang giấy vở học sinh Việt Nam (lề đỏ đôi, dòng kẻ xanh đậm/nhạt 4 ô ly)
- * - Vẽ nét mực bút bi tự nhiên (hand-drawn ballpoint pen strokes) cho X, O, Δ, □
- * - Vẽ đường viền bút bi bo sát (Polygonal Contour) khoanh vùng các ván cờ cũ (Điểm chết)
- * - Hỗ trợ Responsive đa thiết bị + Thu phóng (Zoom) cho màn hình cảm ứng điện thoại/tablet
+ * Engine vẽ Trang Vở Ô Ly Học Trò 9x Việt Nam trên HTML5 Canvas
+ * - Giấy vở ngả màu kem hoài cổ (#f9f4e6), gáy vở dập ghim sắt, mép giấy 200 trang xếp lớp
+ * - Đường kẻ ô ly xanh tím Hồng Hà thập niên 90, lề đỏ đôi, ô "Điểm / Lời phê" góc đầu trang
+ * - Nét mực bút bi Thiên Long xanh / đỏ / tím / xanh lá vẽ tay nhiều lớp chân thực
+ * - Đường khoanh vùng Điểm Chết (Polygonal Contour) bằng nét bút bi lượn tự nhiên
  */
 
 import { BOARD_ROWS, BOARD_COLS, SYMBOL_CONFIG, cellKey, parseCellKey } from './rules.js';
@@ -17,14 +17,14 @@ export class NotebookBoardRenderer {
 
     this.cellSize = 26;
     this.zoomMultiplier = 1.0;
-    this.marginLeft = 42;
-    this.marginTop = 52;
-    this.marginRight = 18;
-    this.marginBottom = 20;
+    this.marginLeft = 48;
+    this.marginTop = 58;
+    this.marginRight = 22;
+    this.marginBottom = 22;
 
     this.hoverCell = null;
     this.pageData = null;
-    this.ownerTitle = ''; // VD: "Vở của Học Sinh #1024" khi chơi Co-op
+    this.ownerTitle = '';
     this.activeBoard = this._createEmptyMatrix();
     this.deadSet = new Set();
     this.currentTurnSymbol = 'X';
@@ -91,22 +91,21 @@ export class NotebookBoardRenderer {
   resize() {
     const dpr = window.devicePixelRatio || 1;
     const container = this.canvas.parentElement;
-    const availW = container ? Math.max(300, container.clientWidth - 16) : window.innerWidth - 24;
-    const availH = container ? Math.max(320, container.clientHeight - 16) : window.innerHeight - 130;
+    const availW = container ? Math.max(300, container.clientWidth - 20) : window.innerWidth - 28;
+    const availH = container ? Math.max(320, container.clientHeight - 20) : window.innerHeight - 135;
 
     const isMobile = window.innerWidth < 768;
-    this.marginLeft = isMobile ? 34 : 44;
-    this.marginTop = isMobile ? 46 : 52;
-    this.marginRight = isMobile ? 12 : 18;
-    this.marginBottom = isMobile ? 14 : 20;
+    this.marginLeft = isMobile ? 36 : 48;
+    this.marginTop = isMobile ? 50 : 58;
+    this.marginRight = isMobile ? 14 : 22;
+    this.marginBottom = isMobile ? 16 : 22;
 
     const fitCellW = Math.floor((availW - this.marginLeft - this.marginRight) / this.cols);
     const fitCellH = Math.floor((availH - this.marginTop - this.marginBottom) / this.rows);
 
-    // Trên mobile giữ kích thước ô tối thiểu 22px để ngón tay chấm bút chính xác
     const baseCell = isMobile
       ? Math.max(22, Math.min(30, Math.max(fitCellW, 22)))
-      : Math.max(20, Math.min(32, Math.min(fitCellW, fitCellH) || 26));
+      : Math.max(21, Math.min(32, Math.min(fitCellW, fitCellH) || 26));
 
     this.cellSize = Math.round(baseCell * this.zoomMultiplier);
 
@@ -147,26 +146,40 @@ export class NotebookBoardRenderer {
     const w = this.logicalWidth;
     const h = this.logicalHeight;
 
-    // 1. Nền giấy vở ô ly trắng ngà
-    ctx.fillStyle = '#fcf9f2';
+    // 1. Nền giấy vở 9x ngả kem vàng ấm áp
+    const paperGrad = ctx.createLinearGradient(0, 0, w, h);
+    paperGrad.addColorStop(0, '#faf5e6');
+    paperGrad.addColorStop(0.5, '#f7f0dc');
+    paperGrad.addColorStop(1, '#f3ead2');
+    ctx.fillStyle = paperGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Hiệu ứng bóng gáy vở bên trái
-    const spineGrad = ctx.createLinearGradient(0, 0, 16, 0);
-    spineGrad.addColorStop(0, 'rgba(15, 23, 42, 0.12)');
-    spineGrad.addColorStop(0.5, 'rgba(15, 23, 42, 0.03)');
-    spineGrad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+    // Bóng gáy vở & 2 ghim sắt đóng vở bên trái
+    const spineGrad = ctx.createLinearGradient(0, 0, 22, 0);
+    spineGrad.addColorStop(0, 'rgba(62, 39, 35, 0.24)');
+    spineGrad.addColorStop(0.45, 'rgba(62, 39, 35, 0.06)');
+    spineGrad.addColorStop(1, 'rgba(62, 39, 35, 0)');
     ctx.fillStyle = spineGrad;
-    ctx.fillRect(0, 0, 16, h);
+    ctx.fillRect(0, 0, 22, h);
 
-    // 2. Vẽ phần đầu trang vở
-    this._drawNotebookHeader(ctx, w);
+    // Vẽ 2 chiếc ghim sắt ở gáy vở
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(4, h * 0.26);
+    ctx.lineTo(4, h * 0.31);
+    ctx.moveTo(4, h * 0.69);
+    ctx.lineTo(4, h * 0.74);
+    ctx.stroke();
 
-    // 3. Vẽ nền vùng điểm chết của các ván cũ
+    // 2. Vẽ phần đầu trang vở 9x (Ô Điểm 10 đỏ + Thứ ngày tháng + Số trang)
+    this._drawNotebookHeader9x(ctx, w);
+
+    // 3. Vẽ nền vùng điểm chết của các ván cũ (gạch chì chéo học trò)
     this._drawArchivedDeadZonesBackground(ctx);
 
-    // 4. Vẽ hệ thống đường kẻ ô ly
-    this._drawNotebookGrid(ctx, w, h);
+    // 4. Vẽ hệ thống đường kẻ ô ly chuẩn vở Hồng Hà 9x
+    this._drawNotebookGrid9x(ctx, w, h);
 
     // 5. Vẽ các ván cờ cũ & đường khoanh vùng bút bi
     this._drawArchivedGames(ctx);
@@ -178,14 +191,17 @@ export class NotebookBoardRenderer {
     this._drawHoverEffect(ctx);
   }
 
-  _drawNotebookHeader(ctx, w) {
+  _drawNotebookHeader9x(ctx, w) {
     const gridRight = this.marginLeft + this.cols * this.cellSize;
 
-    ctx.strokeStyle = '#60a5fa';
-    ctx.lineWidth = 1.2;
+    // Đường kẻ ngang đôi đậm dưới phần tiêu đề đầu trang
+    ctx.strokeStyle = 'rgba(59, 108, 180, 0.65)';
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.moveTo(0, this.marginTop - 6);
-    ctx.lineTo(w, this.marginTop - 6);
+    ctx.moveTo(0, this.marginTop - 7);
+    ctx.lineTo(w, this.marginTop - 7);
+    ctx.moveTo(0, this.marginTop - 4);
+    ctx.lineTo(w, this.marginTop - 4);
     ctx.stroke();
 
     const dateStr = this.pageData?.dateHeader || 'Thứ Bảy, ngày 17 tháng 10 năm 2026';
@@ -193,81 +209,106 @@ export class NotebookBoardRenderer {
     const archivedCount = this.pageData?.archivedGames?.length || 0;
 
     ctx.save();
-    ctx.font = 'italic 600 13px "Segoe UI", "Times New Roman", serif';
-    ctx.fillStyle = '#1e3a8a';
-    ctx.fillText(dateStr, this.marginLeft + 8, 29);
 
+    // Con dấu điểm 10 đỏ nhỏ góc trái trên nếu trang đã có ván thắng
+    if (archivedCount > 0) {
+      ctx.save();
+      ctx.translate(22, 26);
+      ctx.rotate(-0.18);
+      ctx.strokeStyle = 'rgba(200, 30, 30, 0.8)';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.font = 'bold 13px "Patrick Hand", "Comic Sans MS", cursive';
+      ctx.fillStyle = 'rgba(200, 30, 30, 0.88)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('10đ', 0, 0);
+      ctx.restore();
+    }
+
+    // Chữ viết tay mực tím/xanh dòng Thứ... ngày... tháng...
+    ctx.font = '700 16px "Patrick Hand", "Mali", cursive, sans-serif';
+    ctx.fillStyle = '#2e1065';
+    ctx.fillText(dateStr, this.marginLeft + 10, 31);
+
+    // Đường kẻ chấm dưới dòng ngày tháng
     ctx.setLineDash([2, 3]);
-    ctx.strokeStyle = '#93c5fd';
+    ctx.strokeStyle = 'rgba(59, 108, 180, 0.5)';
     ctx.beginPath();
-    ctx.moveTo(this.marginLeft + 6, 34);
-    ctx.lineTo(Math.min(gridRight - 160, this.marginLeft + 280), 34);
+    ctx.moveTo(this.marginLeft + 8, 36);
+    ctx.lineTo(Math.min(gridRight - 150, this.marginLeft + 290), 36);
     ctx.stroke();
     ctx.setLineDash([]);
 
-    if (archivedCount > 0 && w > 640) {
-      ctx.font = '600 11.5px "Segoe UI", sans-serif';
+    // Ghi chú bút đỏ của học trò khi đã khoanh ván cũ
+    if (archivedCount > 0 && w > 620) {
+      ctx.font = '700 14px "Patrick Hand", "Mali", cursive, sans-serif';
       ctx.fillStyle = '#b91c1c';
-      ctx.fillText(`• Đã khoanh ${archivedCount} ván (${this.deadSet.size} ô điểm chết)`, this.marginLeft + 292, 29);
+      ctx.fillText(`(Đã khoanh ${archivedCount} ván • ${this.deadSet.size} ô chết)`, this.marginLeft + 300, 31);
     }
 
-    ctx.font = 'bold 12.5px "Segoe UI", sans-serif';
-    ctx.fillStyle = '#1e40af';
+    // Góc phải: Tên chủ vở & Số trang
+    ctx.font = '700 15px "Patrick Hand", "Mali", cursive, sans-serif';
+    ctx.fillStyle = '#1e3a8a';
     ctx.textAlign = 'right';
     const rightHeader = this.ownerTitle
-      ? `${this.ownerTitle} • Trang ${pageNum} / 200`
+      ? `${this.ownerTitle} • Trang ${pageNum}/200`
       : `Trang ${pageNum} / 200`;
-    ctx.fillText(rightHeader, gridRight - 4, 29);
+    ctx.fillText(rightHeader, gridRight - 4, 31);
     ctx.restore();
   }
 
-  _drawNotebookGrid(ctx, w, h) {
+  _drawNotebookGrid9x(ctx, w, h) {
     const startX = this.marginLeft;
     const startY = this.marginTop;
     const endX = startX + this.cols * this.cellSize;
     const endY = startY + this.rows * this.cellSize;
 
+    // Đường kẻ dọc vở ô ly 9x (cứ 4 ô ly nhỏ là 1 đường kẻ đậm)
     for (let c = 0; c <= this.cols; c++) {
       const x = startX + c * this.cellSize;
       const isMajor = c % 4 === 0;
-      ctx.strokeStyle = isMajor ? 'rgba(59, 130, 246, 0.42)' : 'rgba(147, 197, 253, 0.36)';
-      ctx.lineWidth = isMajor ? 1.0 : 0.65;
+      ctx.strokeStyle = isMajor ? 'rgba(49, 98, 168, 0.52)' : 'rgba(92, 142, 209, 0.32)';
+      ctx.lineWidth = isMajor ? 1.05 : 0.65;
       ctx.beginPath();
       ctx.moveTo(x, startY);
       ctx.lineTo(x, endY);
       ctx.stroke();
     }
 
+    // Đường kẻ ngang vở ô ly 9x
     for (let r = 0; r <= this.rows; r++) {
       const y = startY + r * this.cellSize;
       const isMajor = r % 4 === 0;
-      ctx.strokeStyle = isMajor ? 'rgba(59, 130, 246, 0.44)' : 'rgba(147, 197, 253, 0.36)';
-      ctx.lineWidth = isMajor ? 1.0 : 0.65;
+      ctx.strokeStyle = isMajor ? 'rgba(49, 98, 168, 0.55)' : 'rgba(92, 142, 209, 0.32)';
+      ctx.lineWidth = isMajor ? 1.05 : 0.65;
       ctx.beginPath();
       ctx.moveTo(startX, y);
       ctx.lineTo(endX, y);
       ctx.stroke();
     }
 
-    // Lề đỏ đôi bên trái
-    ctx.strokeStyle = 'rgba(239, 68, 68, 0.68)';
-    ctx.lineWidth = 1.25;
+    // Đường lề đỏ đôi truyền thống bên trái trang vở
+    ctx.strokeStyle = 'rgba(210, 45, 45, 0.72)';
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
     ctx.moveTo(this.marginLeft - 6, 0);
     ctx.lineTo(this.marginLeft - 6, h);
-    ctx.moveTo(this.marginLeft - 9, 0);
-    ctx.lineTo(this.marginLeft - 9, h);
+    ctx.moveTo(this.marginLeft - 9.5, 0);
+    ctx.lineTo(this.marginLeft - 9.5, h);
     ctx.stroke();
 
     if (this.showCoordinates) {
       ctx.save();
-      ctx.font = '9.5px "Segoe UI", sans-serif';
-      ctx.fillStyle = 'rgba(100, 116, 139, 0.65)';
+      ctx.font = '700 11px "Patrick Hand", cursive, sans-serif';
+      ctx.fillStyle = 'rgba(91, 33, 182, 0.55)';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
       for (let r = 0; r < this.rows; r += 2) {
         const y = startY + (r + 0.5) * this.cellSize;
-        ctx.fillText(String(r + 1), this.marginLeft - 12, y);
+        ctx.fillText(String(r + 1), this.marginLeft - 14, y);
       }
       ctx.restore();
     }
@@ -285,11 +326,13 @@ export class NotebookBoardRenderer {
         const x = this.marginLeft + c * this.cellSize;
         const y = this.marginTop + r * this.cellSize;
 
-        ctx.fillStyle = 'rgba(148, 163, 184, 0.16)';
+        // Nền vùng đã khoanh (màu chì nhạt trên giấy cũ)
+        ctx.fillStyle = 'rgba(120, 113, 108, 0.14)';
         ctx.fillRect(x, y, this.cellSize, this.cellSize);
 
-        ctx.strokeStyle = 'rgba(100, 116, 139, 0.18)';
-        ctx.lineWidth = 0.7;
+        // Nét gạch chì chéo kiểu học sinh gạch bỏ vùng cờ cũ
+        ctx.strokeStyle = 'rgba(87, 83, 78, 0.22)';
+        ctx.lineWidth = 0.8;
         ctx.beginPath();
         ctx.moveTo(x + 3, y + this.cellSize - 3);
         ctx.lineTo(x + this.cellSize - 3, y + 3);
@@ -304,7 +347,7 @@ export class NotebookBoardRenderer {
 
     this.pageData.archivedGames.forEach((game, idx) => {
       ctx.save();
-      ctx.globalAlpha = 0.56;
+      ctx.globalAlpha = 0.55;
       for (const m of game.moves || []) {
         this._drawSymbolInCell(ctx, m.r, m.c, m.symbol, false);
       }
@@ -316,7 +359,7 @@ export class NotebookBoardRenderer {
 
       const fenceColor = game.winnerSymbol && SYMBOL_CONFIG[game.winnerSymbol]
         ? SYMBOL_CONFIG[game.winnerSymbol].borderColor
-        : '#334155';
+        : '#3b0764';
 
       if (game.contours && game.contours.length > 0) {
         for (const contour of game.contours) {
@@ -334,8 +377,8 @@ export class NotebookBoardRenderer {
     const pts = contour.map((pt, idx) => {
       const baseX = this.marginLeft + pt.c * this.cellSize;
       const baseY = this.marginTop + pt.r * this.cellSize;
-      const jx = this._seededJitter(pt.r + seedIndex, pt.c + idx, 1.3);
-      const jy = this._seededJitter(pt.c + seedIndex, pt.r + idx, 1.3);
+      const jx = this._seededJitter(pt.r + seedIndex, pt.c + idx, 1.45);
+      const jy = this._seededJitter(pt.c + seedIndex, pt.r + idx, 1.45);
       return { x: baseX + jx, y: baseY + jy };
     });
 
@@ -343,8 +386,8 @@ export class NotebookBoardRenderer {
     for (let pass = 0; pass < 2; pass++) {
       ctx.beginPath();
       ctx.strokeStyle = strokeColor;
-      ctx.lineWidth = pass === 0 ? 2.2 : 1.1;
-      ctx.globalAlpha = pass === 0 ? 0.85 : 0.45;
+      ctx.lineWidth = pass === 0 ? 2.4 : 1.2;
+      ctx.globalAlpha = pass === 0 ? 0.88 : 0.48;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
 
@@ -358,8 +401,8 @@ export class NotebookBoardRenderer {
       for (let i = 0; i < n; i++) {
         const curr = pts[i];
         const next = pts[(i + 1) % n];
-        const midX = (curr.x + next.x) / 2 + (pass * 0.5);
-        const midY = (curr.y + next.y) / 2 - (pass * 0.5);
+        const midX = (curr.x + next.x) / 2 + (pass * 0.65);
+        const midY = (curr.y + next.y) / 2 - (pass * 0.65);
         ctx.quadraticCurveTo(curr.x, curr.y, midX, midY);
       }
 
@@ -380,22 +423,22 @@ export class NotebookBoardRenderer {
     }
 
     const x = this.marginLeft + topMove.c * this.cellSize + 2;
-    const y = Math.max(this.marginTop + 10, this.marginTop + topMove.r * this.cellSize - 3);
+    const y = Math.max(this.marginTop + 12, this.marginTop + topMove.r * this.cellSize - 2);
     const resultLabel = game.winnerSymbol === 'DRAW'
       ? `Ván #${gameNumber}: Hòa`
       : `Ván #${gameNumber}: ${game.winnerSymbol || '?'} thắng`;
 
     ctx.save();
-    ctx.font = 'bold 10px "Segoe UI", sans-serif';
+    ctx.font = 'bold 12px "Patrick Hand", cursive, sans-serif';
     const textW = ctx.measureText(resultLabel).width;
-    const padX = 5;
-    const boxH = 15;
+    const padX = 6;
+    const boxH = 16;
 
-    ctx.fillStyle = '#fef9c3';
+    ctx.fillStyle = '#fef08a';
     ctx.strokeStyle = badgeColor;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.roundRect(x, y - boxH + 3, textW + padX * 2, boxH, 4);
+    ctx.roundRect(x, y - boxH + 3, textW + padX * 2, boxH, 3);
     ctx.fill();
     ctx.stroke();
 
@@ -433,21 +476,23 @@ export class NotebookBoardRenderer {
     ctx.save();
 
     if (isLastMove) {
-      ctx.fillStyle = cfg.lightColor;
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.28)';
       ctx.fillRect(x + 1, y + 1, s - 2, s - 2);
       ctx.strokeStyle = cfg.color;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 1.3;
+      ctx.setLineDash([2, 2]);
       ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
+      ctx.setLineDash([]);
     }
 
     ctx.strokeStyle = cfg.color;
-    ctx.lineWidth = Math.max(2.0, s * 0.095);
+    ctx.lineWidth = Math.max(2.2, s * 0.1);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const pad = s * 0.21;
-    const j1 = this._seededJitter(r, c, 0.85);
-    const j2 = this._seededJitter(c, r, 0.85);
+    const pad = s * 0.2;
+    const j1 = this._seededJitter(r, c, 0.95);
+    const j2 = this._seededJitter(c, r, 0.95);
 
     if (symbol === 'X') {
       ctx.beginPath();
@@ -466,7 +511,7 @@ export class NotebookBoardRenderer {
       const ry = (s / 2 - pad) * (1 - j2 * 0.03);
 
       ctx.beginPath();
-      ctx.ellipse(cx, cy, Math.max(3, rx), Math.max(3, ry), j1 * 0.15, 0, Math.PI * 2 + 0.25);
+      ctx.ellipse(cx, cy, Math.max(3, rx), Math.max(3, ry), j1 * 0.15, 0, Math.PI * 2 + 0.3);
       ctx.stroke();
     } else if (symbol === 'Δ') {
       ctx.beginPath();
@@ -496,7 +541,7 @@ export class NotebookBoardRenderer {
 
     ctx.save();
     ctx.strokeStyle = cfg.color;
-    ctx.lineWidth = 3.2;
+    ctx.lineWidth = 3.5;
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -514,13 +559,13 @@ export class NotebookBoardRenderer {
 
     ctx.save();
     if (this.deadSet.has(k)) {
-      ctx.fillStyle = 'rgba(220, 38, 38, 0.22)';
+      ctx.fillStyle = 'rgba(200, 30, 30, 0.24)';
       ctx.fillRect(x + 1, y + 1, this.cellSize - 2, this.cellSize - 2);
-      ctx.strokeStyle = '#dc2626';
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = '#c81e1e';
+      ctx.lineWidth = 1.5;
       ctx.strokeRect(x + 1, y + 1, this.cellSize - 2, this.cellSize - 2);
     } else if (this.activeBoard[r][c] === null) {
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.38;
       this._drawSymbolInCell(ctx, r, c, this.currentTurnSymbol, false);
     }
     ctx.restore();

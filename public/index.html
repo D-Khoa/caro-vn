@@ -3,185 +3,217 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Cờ Caro Vở Ô Ly Việt Nam - Quyển Vở 200 Trang</title>
+  <title>Cờ Caro Vở Ô Ly 9x - Ký Ức Học Trò Việt Nam</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Mali:ital,wght@0,500;0,600;0,700;1,600&family=Patrick+Hand&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./css/style.css" />
 </head>
 <body>
   <div class="app-shell">
 
     <!-- ======================================================================
-         1. TRANG MENU CHÍNH (MAIN MENU VIEW)
+         1. TRANG MENU CHÍNH (BÌA VỞ HỒNG HÀ / VĨNH TIẾN THẬP NIÊN 9X)
          ====================================================================== -->
     <section id="view-menu" class="screen-view active">
       <div class="menu-notebook-cover">
-        <div class="cover-spine"></div>
+        <div class="cover-spine">
+          <span class="spine-staple top"></span>
+          <span class="spine-staple bottom"></span>
+        </div>
+
         <div class="cover-content">
-          <div class="cover-badge">TRÒ CHƠI HỌC ĐƯỜNG VIỆT NAM</div>
-          <h1 class="cover-title">CỜ CARO VỞ Ô LY</h1>
-          <p class="cover-subtitle">Quyển vở 200 trang • Khoanh vùng thế cờ cũ • Đại chiến 10,000 CCU</p>
-
-          <!-- Nhãn vở học sinh truyền thống -->
-          <div class="student-notebook-label">
-            <div class="student-label-inner">
-              <div class="label-line"><span>Trường:</span> <strong id="menu-label-school">THPT Chuyên Caro Việt Nam</strong></div>
-              <div class="label-line"><span>Lớp:</span> <strong id="menu-label-class">12A1</strong></div>
-              <div class="label-line"><span>Họ và tên:</span> <strong id="menu-label-name" class="highlight-handwriting">Học Sinh #1024</strong></div>
-              <div class="label-line-meta">
-                <span>Đang mở: <strong id="menu-current-page">Trang 1 / 200</strong></span>
-                <span>•</span>
-                <span id="menu-rule-indicator">Luật chặn 2 đầu: BẬT</span>
-              </div>
+          <div class="cover-vintage-frame">
+            <!-- Con dấu 10 điểm đỏ của cô giáo -->
+            <div class="teacher-stamp" title="Lời phê của cô giáo">
+              <div class="stamp-score">10</div>
+              <div class="stamp-note">Cờ cao!<br/>Chữ đẹp</div>
             </div>
-          </div>
 
-          <!-- Cấu hình nhanh trước khi vào bàn cờ -->
-          <div class="quick-setup-box">
-            <!-- Tuỳ chọn PvE -->
-            <div id="menu-pve-options" class="quick-subbox">
-              <div class="subbox-row">
-                <label for="select-ai-level">Cấp độ Máy (1–10):</label>
-                <select id="select-ai-level" class="clean-select"></select>
-              </div>
-              <div class="subbox-row">
-                <span>Màu bút của bạn:</span>
-                <div class="pill-radio-group">
-                  <label class="pill-radio"><input type="radio" name="pve-side" value="X" checked /> <span class="sym-x">X (Đi trước)</span></label>
-                  <label class="pill-radio"><input type="radio" name="pve-side" value="O" /> <span class="sym-o">O (Đi sau)</span></label>
+            <div class="cover-ministry-text">KÝ ỨC HỌC ĐƯỜNG VIỆT NAM • THẬP NIÊN 9X</div>
+            <h1 class="cover-title">CỜ CARO VỞ Ô LY</h1>
+            <p class="cover-subtitle">★ Quyển vở 200 trang • Khoanh bút bi thế cờ cũ • Niên khóa 199x – 200x ★</p>
+
+            <!-- Nhãn vở học sinh 9x truyền thống -->
+            <div class="student-notebook-label">
+              <div class="tape-strip tape-tl"></div>
+              <div class="tape-strip tape-tr"></div>
+              <div class="student-label-inner">
+                <div class="label-header-title">NHÃN VỞ HỌC SINH</div>
+                <div class="label-line">
+                  <span>Trường:</span>
+                  <strong id="menu-label-school" class="ink-purple">THPT Chuyên Caro Việt Nam</strong>
+                </div>
+                <div class="label-line">
+                  <span>Lớp:</span>
+                  <strong id="menu-label-class" class="ink-purple">12A1 (Niên khóa 9x)</strong>
+                </div>
+                <div class="label-line">
+                  <span>Họ và tên:</span>
+                  <strong id="menu-label-name" class="ink-purple highlight-handwriting">Học Sinh #1024</strong>
+                </div>
+                <div class="label-line-meta">
+                  <span>Đang mở: <strong id="menu-current-page">Trang 1 / 200</strong></span>
+                  <span>•</span>
+                  <span id="menu-rule-indicator">Chặn 2 đầu: BẬT</span>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Các nút chọn chế độ chính -->
-          <div class="menu-primary-actions">
-            <button id="btn-start-pve" type="button" class="btn-menu-main btn-menu-pve">
-              <span class="btn-icon">🤖</span>
-              <div class="btn-text">
-                <strong>Đấu Với Máy (PvE)</strong>
-                <small>10 cấp độ từ Tập Sự đến Cờ Thánh</small>
+            <!-- Mảnh giấy nháp chọn nhanh đối thủ Máy & Màu mực -->
+            <div class="quick-setup-box">
+              <div class="quick-subbox">
+                <div class="subbox-row">
+                  <label for="select-ai-level">✒️ Chọn đối thủ cùng bàn (1–10):</label>
+                  <select id="select-ai-level" class="clean-select"></select>
+                </div>
+                <div class="subbox-row">
+                  <span>🖊️ Chọn cây bút bi của bạn:</span>
+                  <div class="pill-radio-group">
+                    <label class="pill-radio">
+                      <input type="radio" name="pve-side" value="X" checked />
+                      <span class="sym-x">Bút Xanh Thiên Long (X)</span>
+                    </label>
+                    <label class="pill-radio">
+                      <input type="radio" name="pve-side" value="O" />
+                      <span class="sym-o">Bút Đỏ Chấm Điểm (O)</span>
+                    </label>
+                  </div>
+                </div>
               </div>
-            </button>
+            </div>
 
-            <button id="btn-start-local" type="button" class="btn-menu-main btn-menu-local">
-              <span class="btn-icon">👥</span>
-              <div class="btn-text">
-                <strong>Chơi Chung Màn Hình (PvP Local)</strong>
-                <small>2 đến 4 người luân phiên chấm bút</small>
-              </div>
-            </button>
+            <!-- Các nút chọn chế độ chính (Kiểu mảnh giấy xé vở học trò) -->
+            <div class="menu-primary-actions">
+              <button id="btn-start-pve" type="button" class="btn-menu-main btn-menu-pve">
+                <span class="btn-icon">📒</span>
+                <div class="btn-text">
+                  <strong>Đấu Với Máy Cùng Bàn (PvE)</strong>
+                  <small>10 danh hiệu học đường từ Tập Sự đến Cờ Thánh</small>
+                </div>
+              </button>
 
-            <button id="btn-open-coop" type="button" class="btn-menu-main btn-menu-online">
-              <span class="btn-icon">🌐</span>
-              <div class="btn-text">
-                <strong>Đại Chiến Co-op Online</strong>
-                <small>Cùng tranh tài trên trang vở của Chủ Phòng</small>
-              </div>
-            </button>
-          </div>
+              <button id="btn-start-local" type="button" class="btn-menu-main btn-menu-local">
+                <span class="btn-icon">✌️</span>
+                <div class="btn-text">
+                  <strong>Chơi Chung Một Tờ Giấy (PvP Local)</strong>
+                  <small>2 đến 4 bạn học luân phiên chấm bút trên cùng màn hình</small>
+                </div>
+              </button>
 
-          <!-- Các trang tách riêng: Lịch Sử & Cài Đặt -->
-          <div class="menu-secondary-nav">
-            <button id="btn-goto-history" type="button" class="btn-sec-nav">
-              📖 Lịch Sử &amp; Vở 200 Trang
-            </button>
-            <button id="btn-goto-settings" type="button" class="btn-sec-nav">
-              ⚙️ Cài Đặt
-            </button>
+              <button id="btn-open-coop" type="button" class="btn-menu-main btn-menu-online">
+                <span class="btn-icon">🏫</span>
+                <div class="btn-text">
+                  <strong>Đại Chiến Liên Lớp (PvP Co-op Online)</strong>
+                  <small>Tất cả cùng kéo sang đánh trên trang vở của Chủ Phòng</small>
+                </div>
+              </button>
+            </div>
+
+            <!-- Nút mở Lịch Sử 200 Trang & Cài Đặt -->
+            <div class="menu-secondary-nav">
+              <button id="btn-goto-history" type="button" class="btn-sec-nav">
+                📖 Lật Xem 200 Trang Vở
+              </button>
+              <button id="btn-goto-settings" type="button" class="btn-sec-nav">
+                ✏️ Sửa Nhãn Vở &amp; Luật
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ======================================================================
-         2. TRANG SẢNH & PHÒNG CHỜ CO-OP ONLINE (CO-OP LOBBY VIEW)
+         2. TRANG SẢNH & PHÒNG CHỜ CO-OP ONLINE (GIẤY KIỂM TRA 15 PHÚT 9X)
          ====================================================================== -->
     <section id="view-coop-lobby" class="screen-view">
       <div class="subpage-container">
         <header class="subpage-header">
-          <button type="button" class="btn-back" data-target="view-menu">◀ Menu Chính</button>
+          <button type="button" class="btn-back" data-target="view-menu">◀ Gấp vở về Menu</button>
           <div>
-            <h2>🌐 Đại Chiến Co-op Online</h2>
-            <p class="subpage-desc">Tất cả người chơi trong phòng sẽ cùng đánh trên Trang Vở Ô Ly của Chủ Phòng</p>
+            <h2>🏫 Giờ Ra Chơi — Đại Chiến Co-op Liên Lớp</h2>
+            <p class="subpage-desc">Cả phòng sẽ cùng tụ tập chấm bút trên Trang Vở Ô Ly của Chủ Phòng!</p>
           </div>
           <div class="telemetry-pills">
-            <span id="online-conn-badge" class="conn-badge disconnected">Đang kết nối...</span>
-            <span class="ping-pill">Ping: <strong id="ping-value">-- ms</strong></span>
+            <span id="online-conn-badge" class="conn-badge disconnected">Đang nối mạng...</span>
+            <span class="ping-pill">Độ trễ: <strong id="ping-value">-- ms</strong></span>
           </div>
         </header>
 
-        <!-- Khi chưa vào phòng: Tạo phòng / Ghép trận / Danh sách phòng -->
+        <!-- Khi chưa vào phòng -->
         <div id="coop-outside-room" class="coop-grid">
-          <div class="card-panel">
-            <h3>1. Tạo Phòng hoặc Ghép Trận</h3>
-            <p class="hint-text">Khi bạn là Chủ Phòng, quyển vở 200 trang của bạn sẽ được mở ra làm chiến trường chung.</p>
+          <div class="card-panel lined-paper-card">
+            <h3>1. Mở Quyển Vở Của Bạn (Làm Chủ Phòng)</h3>
+            <p class="hint-text">Khi bạn mở phòng, các bạn khác vào phòng sẽ đánh trực tiếp lên trang vở bạn đã chọn.</p>
 
             <div class="form-group">
-              <label>Kiểu đại chiến nhiều người:</label>
+              <label>Chọn thể thức giao đấu:</label>
               <div class="submode-selector">
-                <button type="button" class="online-submode-btn active" data-submode="1v1">⚔️ Đấu 1v1 (+Khán giả)</button>
-                <button type="button" class="online-submode-btn" data-submode="team">🤝 Chia Phe Đội X vs Đội O</button>
-                <button type="button" class="online-submode-btn" data-submode="ffa">🔥 Hỗn Chiến 2–4 Người (X, O, Δ, □)</button>
+                <button type="button" class="online-submode-btn active" data-submode="1v1">⚔️ Đấu Tay Đôi 1v1 (+Bạn xem ké)</button>
+                <button type="button" class="online-submode-btn" data-submode="team">🤝 Chia 2 Tổ (Đội X đấu Đội O)</button>
+                <button type="button" class="online-submode-btn" data-submode="ffa">🔥 Hỗn Chiến Bàn Cuối (2–4 màu mực: X, O, Δ, □)</button>
               </div>
             </div>
 
             <div class="form-group">
-              <label for="coop-create-page-select">Chọn trang vở của bạn để mở phòng (Trang 1 – 200):</label>
+              <label for="coop-create-page-select">Lật chọn trang vở của bạn trước khi mở phòng (1 – 200):</label>
               <div class="host-page-picker-row">
                 <input id="coop-create-page-select" type="number" min="1" max="200" value="1" class="clean-input" />
-                <span id="coop-create-page-info" class="page-meta-badge">Giấy trắng (100% trống)</span>
+                <span id="coop-create-page-info" class="page-meta-badge">Giấy trắng tinh (100% trống)</span>
               </div>
             </div>
 
             <div class="button-row-2">
-              <button id="btn-create-room" type="button" class="btn-primary">➕ Tạo Phòng Mới</button>
-              <button id="btn-quick-match" type="button" class="btn-accent">⚡ Ghép Trận Nhanh</button>
+              <button id="btn-create-room" type="button" class="btn-primary">➕ Mở Bàn Mới</button>
+              <button id="btn-quick-match" type="button" class="btn-accent">⚡ Ghép Bàn Nhanh</button>
             </div>
 
             <div class="divider-line"></div>
 
-            <h3>2. Vào Phòng Bằng Mã</h3>
+            <h3>2. Sang Bàn Bạn Khác Bằng Mã Số</h3>
             <div class="join-code-bar">
-              <input id="input-room-code" type="text" placeholder="Nhập mã phòng (VD: A1B2C)" maxlength="8" class="clean-input uppercase-input" />
-              <button id="btn-join-room" type="button" class="btn-primary">Vào Phòng</button>
+              <input id="input-room-code" type="text" placeholder="Nhập mật khẩu bàn (VD: A1B2C)" maxlength="8" class="clean-input uppercase-input" />
+              <button id="btn-join-room" type="button" class="btn-primary">Sang Bàn Này</button>
             </div>
           </div>
 
-          <div class="card-panel">
+          <div class="card-panel lined-paper-card">
             <div class="panel-head-inline">
-              <h3>📋 Danh Sách Phòng Đang Mở (<span id="server-room-count">0</span>)</h3>
-              <button id="btn-refresh-rooms" type="button" class="btn-text-link">🔄 Làm mới</button>
+              <h3>📋 Các Bàn Đang Tụ Tập (<span id="server-room-count">0</span>)</h3>
+              <button id="btn-refresh-rooms" type="button" class="btn-text-link">🔄 Ngó lại</button>
             </div>
             <div id="public-rooms-list" class="rooms-scroll-list"></div>
           </div>
         </div>
 
-        <!-- Khi đã ở trong phòng Co-op: Phòng chờ & Chọn trang vở của Chủ Phòng -->
-        <div id="coop-inside-room" class="card-panel hidden">
+        <!-- Khi đã ở trong phòng Co-op -->
+        <div id="coop-inside-room" class="card-panel lined-paper-card hidden">
           <div class="room-banner-top">
             <div>
-              <span class="room-code-pill">Mã Phòng: <strong id="active-room-code">----</strong></span>
+              <span class="room-code-pill">Mã Bàn: <strong id="active-room-code">----</strong></span>
               <h3 id="active-room-title">Vở của Chủ Phòng • Trang 1 / 200</h3>
               <p id="active-room-submode" class="subpage-desc">Đấu 1v1</p>
             </div>
             <div class="room-top-btns">
-              <button id="btn-enter-coop-board" type="button" class="btn-primary">✍️ Mở Trang Vở Để Đánh</button>
-              <button id="btn-leave-room" type="button" class="btn-danger">Rời Phòng</button>
+              <button id="btn-enter-coop-board" type="button" class="btn-primary">✍️ Mở Tờ Giấy Vở Ra Đánh!</button>
+              <button id="btn-leave-room" type="button" class="btn-danger">Về Chỗ Ngồi</button>
             </div>
           </div>
 
-          <!-- Khu vực dành riêng cho CHỦ PHÒNG chọn trang vở trước khi bắt đầu ván -->
+          <!-- Khu vực Chủ Phòng chọn trang vở trước khi bắt đầu ván -->
           <div id="host-room-controls" class="host-control-box">
             <div class="host-control-header">
-              <strong>👑 Quyền Chủ Phòng: Chọn trang vở đại chiến trước khi bắt đầu ván</strong>
-              <span class="host-status-note" id="host-control-lock-note">Có thể đổi trang khi chưa đi nước đầu tiên</span>
+              <strong>👑 Quyền Chủ Quyển Vở: Lật chọn trang vở trước khi bắt đầu ván cờ</strong>
+              <span class="host-status-note" id="host-control-lock-note">Được lật trang thoải mái khi chưa chấm nước đầu tiên</span>
             </div>
             <div class="host-control-row">
               <div class="host-page-step">
-                <label>Trang vở của bạn (1–200):</label>
+                <label>Trang vở (1–200):</label>
                 <button id="btn-host-prev-page" type="button" class="btn-step">◀</button>
                 <input id="input-host-room-page" type="number" min="1" max="200" value="1" class="clean-input small-num" />
                 <button id="btn-host-next-page" type="button" class="btn-step">▶</button>
-                <button id="btn-host-apply-page" type="button" class="btn-accent-sm">Áp dụng trang này</button>
+                <button id="btn-host-apply-page" type="button" class="btn-accent-sm">Mở trang này cho cả phòng</button>
               </div>
               <label class="checkbox-inline">
                 <input id="coop-host-block-toggle" type="checkbox" checked />
@@ -192,22 +224,22 @@
 
           <div class="coop-room-columns">
             <div>
-              <h4>Danh sách người chơi &amp; Chọn phe:</h4>
+              <h4>Học sinh quanh bàn &amp; Chọn màu bút:</h4>
               <div id="room-symbol-Readiness" class="role-switch-group"></div>
               <div id="active-room-players" class="players-list-box"></div>
             </div>
 
             <div>
-              <h4>Trò chuyện trong phòng:</h4>
+              <h4>Nhắn tin chuyền tay dưới gầm bàn:</h4>
               <div id="online-chat-log" class="chat-log-box"></div>
               <div class="quick-chat-row">
-                <button type="button" class="quick-chat-chip" data-msg="Chủ phòng chọn trang vở nào còn rộng nha!">Chọn trang rộng nha!</button>
-                <button type="button" class="quick-chat-chip" data-msg="Vào trang vở đại chiến thôi!">Bắt đầu thôi!</button>
-                <button type="button" class="quick-chat-chip" data-msg="Coi chừng đụng vùng điểm chết!">Chú ý điểm chết!</button>
+                <button type="button" class="quick-chat-chip" data-msg="Chủ vở lật trang nào còn nhiều ô trống nha!">Chọn trang rộng nha!</button>
+                <button type="button" class="quick-chat-chip" data-msg="Trống trường sắp đánh rồi, lẹ tay lên!">Lẹ tay lên!</button>
+                <button type="button" class="quick-chat-chip" data-msg="Coi chừng vướng vùng khoanh ván cũ đó!">Chú ý điểm chết!</button>
               </div>
               <div class="chat-send-row">
-                <input id="input-chat-msg" type="text" placeholder="Nhắn tin..." maxlength="120" class="clean-input" />
-                <button id="btn-send-chat" type="button" class="btn-primary">Gửi</button>
+                <input id="input-chat-msg" type="text" placeholder="Viết mẩu giấy nhỏ..." maxlength="120" class="clean-input" />
+                <button id="btn-send-chat" type="button" class="btn-primary">Chuyền</button>
               </div>
             </div>
           </div>
@@ -216,55 +248,53 @@
     </section>
 
     <!-- ======================================================================
-         3. TRANG LỊCH SỬ & QUYỂN VỞ 200 TRANG (HISTORY VIEW)
+         3. TRANG LỊCH SỬ & QUYỂN VỞ 200 TRANG (MỤC LỤC VỞ HỌC TRÒ)
          ====================================================================== -->
     <section id="view-history" class="screen-view">
       <div class="subpage-container">
         <header class="subpage-header">
-          <button type="button" class="btn-back" data-target="view-menu">◀ Menu Chính</button>
+          <button type="button" class="btn-back" data-target="view-menu">◀ Gấp vở về Menu</button>
           <div>
-            <h2>📖 Lịch Sử &amp; Quyển Vở Ô Ly 200 Trang</h2>
-            <p id="notebook-index-summary" class="subpage-desc">Xem lại các thế cờ đã khoanh vùng điểm chết hoặc chọn trang để đánh tiếp</p>
+            <h2>📖 Mục Lục Quyển Vở Ô Ly 200 Trang</h2>
+            <p id="notebook-index-summary" class="subpage-desc">Lật xem lại kỷ niệm các ván cờ đã khoanh bút bi hoặc chọn trang còn giấy trống để đánh tiếp</p>
           </div>
           <div class="backup-btns">
-            <button id="btn-export-notebook" type="button" class="btn-outline">💾 Xuất vở (.json)</button>
-            <button id="btn-import-notebook" type="button" class="btn-outline">📂 Nhập vở (.json)</button>
+            <button id="btn-export-notebook" type="button" class="btn-outline">💾 Cất vở vào cặp (.json)</button>
+            <button id="btn-import-notebook" type="button" class="btn-outline">📂 Lấy vở từ cặp (.json)</button>
             <input id="input-import-notebook" type="file" accept=".json" class="hidden" />
           </div>
         </header>
 
-        <!-- Thanh thống kê thành tích học sinh -->
+        <!-- Bảng điểm tổng kết học kỳ -->
         <div class="stats-summary-strip">
-          <div class="stat-box"><span>🏆 Trận Thắng</span><strong id="stat-wins">0</strong></div>
-          <div class="stat-box"><span>🤝 Trận Hòa</span><strong id="stat-draws">0</strong></div>
-          <div class="stat-box"><span>🎖️ Kỷ Lục Thắng AI</span><strong id="stat-best-ai">Chưa</strong></div>
-          <div class="stat-box"><span>📑 Số Trang Đã Viết</span><strong id="stat-used-pages">0 / 200</strong></div>
+          <div class="stat-box"><span>🏆 Số Ván Thắng</span><strong id="stat-wins">0</strong></div>
+          <div class="stat-box"><span>🤝 Số Ván Hòa</span><strong id="stat-draws">0</strong></div>
+          <div class="stat-box"><span>🎖️ Đã Hạ Cao Thủ Máy</span><strong id="stat-best-ai">Chưa</strong></div>
+          <div class="stat-box"><span>📑 Số Trang Đã Dùng</span><strong id="stat-used-pages">0 / 200</strong></div>
         </div>
 
         <div class="history-layout">
-          <!-- Cột trái: Danh sách 200 trang có bộ lọc -->
-          <div class="card-panel history-pages-panel">
+          <div class="card-panel lined-paper-card history-pages-panel">
             <div class="filter-bar">
-              <button type="button" class="history-filter-btn active" data-filter="all">Tất cả (200)</button>
-              <button type="button" class="history-filter-btn" data-filter="used">Đã có ván cờ</button>
-              <button type="button" class="history-filter-btn" data-filter="empty">Giấy trắng</button>
+              <button type="button" class="history-filter-btn active" data-filter="all">Tất cả 200 trang</button>
+              <button type="button" class="history-filter-btn" data-filter="used">Trang đã đánh cờ</button>
+              <button type="button" class="history-filter-btn" data-filter="empty">Trang giấy trắng</button>
             </div>
             <div id="notebook-pages-grid" class="notebook-pages-grid"></div>
           </div>
 
-          <!-- Cột phải: Chi tiết trang đang chọn -->
-          <div class="card-panel history-detail-panel">
+          <div class="card-panel lined-paper-card history-detail-panel">
             <div class="detail-head">
               <h3 id="history-selected-page-title">Trang 1 / 200</h3>
               <span id="history-selected-page-meta" class="page-meta-badge">Trống 100%</span>
             </div>
 
             <div class="detail-actions">
-              <button id="btn-history-play-page" type="button" class="btn-primary">▶️ Mở Trang Này Để Chơi Tiếp</button>
-              <button id="btn-history-clear-page" type="button" class="btn-danger-outline">🧽 Tẩy Sạch Trang Này</button>
+              <button id="btn-history-play-page" type="button" class="btn-primary">▶️ Lật Tới Trang Này Đánh Tiếp</button>
+              <button id="btn-history-clear-page" type="button" class="btn-danger-outline">🧽 Lấy Cục Tẩy Xóa Trang Này</button>
             </div>
 
-            <h4>Các ván cờ đã khoanh vùng trên trang này:</h4>
+            <h4>Các thế cờ đã khoanh bút bi trên trang này:</h4>
             <div id="history-page-games-list" class="archived-games-list"></div>
           </div>
         </div>
@@ -272,145 +302,144 @@
     </section>
 
     <!-- ======================================================================
-         4. TRANG CÀI ĐẶT (SETTINGS VIEW)
+         4. TRANG CÀI ĐẶT & VIẾT NHÃN VỞ (SETTINGS VIEW)
          ====================================================================== -->
     <section id="view-settings" class="screen-view">
       <div class="subpage-container narrow-container">
         <header class="subpage-header">
-          <button type="button" class="btn-back" data-target="view-menu">◀ Menu Chính</button>
+          <button type="button" class="btn-back" data-target="view-menu">◀ Gấp vở về Menu</button>
           <div>
-            <h2>⚙️ Cài Đặt Trò Chơi &amp; Nhãn Vở</h2>
-            <p class="subpage-desc">Tùy chỉnh thông tin học sinh, luật cờ Caro Việt Nam và hiển thị đa thiết bị</p>
+            <h2>✏️ Viết Nhãn Vở &amp; Quy Luật Giao Đấu</h2>
+            <p class="subpage-desc">Ghi tên lên nhãn vở và thống nhất luật chơi trước giờ ra chơi</p>
           </div>
         </header>
 
-        <div class="card-panel settings-form">
-          <h3>🏷️ Thông Tin Nhãn Vở Học Sinh</h3>
+        <div class="card-panel lined-paper-card settings-form">
+          <h3>🏷️ Ghi Nhãn Vở Học Sinh</h3>
           <div class="form-grid-2">
             <div class="form-group">
               <label for="student-name-input">Họ và tên học sinh:</label>
               <input id="student-name-input" type="text" maxlength="26" class="clean-input" />
             </div>
             <div class="form-group">
-              <label for="student-school-input">Trường:</label>
+              <label for="student-school-input">Trường học:</label>
               <input id="student-school-input" type="text" maxlength="40" class="clean-input" />
             </div>
             <div class="form-group">
-              <label for="student-class-input">Lớp:</label>
+              <label for="student-class-input">Lớp / Niên khóa:</label>
               <input id="student-class-input" type="text" maxlength="16" class="clean-input" />
             </div>
             <div class="form-group">
-              <label for="setting-local-count">Số người chơi Chung Màn Hình (PvP Local):</label>
+              <label for="setting-local-count">Số bạn chơi chung 1 màn hình (Local):</label>
               <select id="setting-local-count" class="clean-select">
-                <option value="2">2 Người (X - O)</option>
-                <option value="3">3 Người (X - O - Δ)</option>
-                <option value="4">4 Người (X - O - Δ - □)</option>
+                <option value="2">2 Bạn (Bút Xanh X - Bút Đỏ O)</option>
+                <option value="3">3 Bạn (X - O - Δ Mực Tím)</option>
+                <option value="4">4 Bạn (X - O - Δ - □ Mực Xanh Lá)</option>
               </select>
             </div>
           </div>
 
           <div class="divider-line"></div>
 
-          <h3>📏 Luật Cờ &amp; Trải Nghiệm</h3>
+          <h3>📏 Luật Chơi Cờ Caro Học Trò</h3>
           <label class="setting-switch-row">
             <div>
-              <strong>Luật chặn 2 đầu (Truyền thống Việt Nam)</strong>
-              <p>Khi bật: Chuỗi 5 quân bị chặn cả 2 đầu bởi quân đối phương hoặc vùng điểm chết sẽ không tính thắng.</p>
+              <strong>Luật chặn 2 đầu (Luật truyền thống học sinh Việt Nam)</strong>
+              <p>Nếu đủ 5 quân nhưng bị đối phương hoặc vùng khoanh cũ chặn sát cả 2 đầu thì chưa được tính thắng.</p>
             </div>
             <input id="toggle-block-two-ends" type="checkbox" checked />
           </label>
 
           <label class="setting-switch-row">
             <div>
-              <strong>Âm thanh tiếng bút bi &amp; lật trang vở</strong>
-              <p>Phát hiệu ứng âm thanh khi chấm bút đánh cờ, khoanh vùng thế cờ và lật trang.</p>
+              <strong>Tiếng đầu bút bi sột soạt &amp; tiếng lật giấy vở</strong>
+              <p>Bật âm thanh hoài niệm khi đánh dấu cờ, khoanh vùng thế cờ và lật trang.</p>
             </div>
             <input id="toggle-sound-setting" type="checkbox" checked />
           </label>
 
           <label class="setting-switch-row">
             <div>
-              <strong>Hiển thị số dòng bên lề đỏ</strong>
-              <p>Giúp dễ quan sát tọa độ dòng trên trang vở ô ly.</p>
+              <strong>Đánh số dòng nhỏ bên lề đỏ</strong>
+              <p>Hiển thị số dòng bằng mực tím nhạt bên trái lề đỏ của trang vở.</p>
             </div>
             <input id="toggle-coords-setting" type="checkbox" checked />
           </label>
 
           <div class="divider-line"></div>
 
-          <h3>🌐 Máy Chủ Co-op Online (Tùy chọn)</h3>
+          <h3>🌐 Máy Chủ Kết Nối Liên Lớp (Nâng cao)</h3>
           <div class="form-group">
-            <label for="input-custom-ws">Địa chỉ WebSocket Server (Để trống để dùng tự động):</label>
+            <label for="input-custom-ws">Địa chỉ WebSocket Server riêng (Để trống để kết nối tự động):</label>
             <input id="input-custom-ws" type="text" placeholder="wss://your-server.com/ws" class="clean-input" />
           </div>
 
           <div class="settings-footer">
-            <button id="btn-save-settings" type="button" class="btn-primary">💾 Lưu Cài Đặt</button>
+            <button id="btn-save-settings" type="button" class="btn-primary">💾 Dán Nhãn Vở &amp; Lưu Lại</button>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ======================================================================
-         5. TRANG GAMEPLAY TỐI GIẢN: 1 TRANG VỞ Ô LY (GAMEPLAY VIEW)
+         5. TRANG GAMEPLAY TỐI GIẢN: 1 TRANG VỞ Ô LY TRÊN BÀN GỖ (GAMEPLAY VIEW)
          ====================================================================== -->
     <section id="view-game" class="screen-view">
-      <!-- Thanh điều khiển tối giản phía trên trang vở -->
+      <!-- Thanh thước kẻ gỗ/nhựa phía trên trang vở -->
       <header class="game-minimal-topbar">
         <div class="topbar-left">
-          <button id="btn-game-back" type="button" class="btn-topbar">◀ Menu</button>
-          <span id="current-turn-badge" class="turn-pill">Lượt: X</span>
+          <button id="btn-game-back" type="button" class="btn-topbar">◀ Gấp vở</button>
+          <span id="current-turn-badge" class="turn-pill">Lượt: Bút Xanh (X)</span>
           <span id="current-mode-desc" class="topbar-meta">PvE • Cấp 5</span>
         </div>
 
-        <!-- Điều hướng trang vở (hoặc Chủ phòng chọn trang khi ở Co-op trước ván) -->
         <div class="topbar-center">
-          <button id="btn-prev-page" type="button" class="btn-page-step" title="Trang trước">◀</button>
+          <button id="btn-prev-page" type="button" class="btn-page-step" title="Lật trang trước">◀</button>
           <div class="page-indicator-box">
             <span id="topbar-owner-prefix">Trang</span>
             <input id="page-jump-input" type="number" min="1" max="200" value="1" />
             <span>/ 200</span>
           </div>
-          <button id="btn-next-page" type="button" class="btn-page-step" title="Trang sau">▶</button>
+          <button id="btn-next-page" type="button" class="btn-page-step" title="Lật trang sau">▶</button>
         </div>
 
         <div class="topbar-right">
-          <div class="zoom-controls" title="Thu phóng ô ly cho màn hình nhỏ">
+          <div class="zoom-controls" title="Phóng to / Thu nhỏ ô ly">
             <button id="btn-zoom-out" type="button" class="btn-topbar-icon">🔍-</button>
             <button id="btn-zoom-in" type="button" class="btn-topbar-icon">🔍+</button>
           </div>
-          <button id="btn-fence-now" type="button" class="btn-topbar btn-fence-compact" title="Khoanh vùng ván này thành điểm chết">
+          <button id="btn-fence-now" type="button" class="btn-topbar btn-fence-compact" title="Lấy bút khoanh vùng ván này thành điểm chết">
             ✒️ Khoanh ván
           </button>
-          <button id="btn-undo-move" type="button" class="btn-topbar" title="Đi lại 1 nước">
+          <button id="btn-undo-move" type="button" class="btn-topbar" title="Xin đi lại 1 nước">
             ↩️ Đi lại
           </button>
           <button id="btn-toggle-coop-drawer" type="button" class="btn-topbar hidden">
-            💬 Phòng
+            💬 Bàn học
           </button>
         </div>
       </header>
 
-      <!-- Banner thông báo kết thúc ván & đã khoanh vùng điểm chết -->
+      <!-- Mẩu giấy báo kết quả ván đấu & đã khoanh vùng điểm chết -->
       <div id="game-end-banner" class="game-end-banner hidden">
         <div class="banner-text">
           <strong id="banner-title">Ván #1 Chiến Thắng!</strong>
-          <span id="banner-subtitle">Thế cờ đã được khoanh viền điểm chết. Chấm vào ô trống bất kỳ để đánh tiếp ván mới!</span>
+          <span id="banner-subtitle">Thế cờ đã được khoanh bút bi thành điểm chết. Chấm vào ô trống bên cạnh để đánh tiếp ván mới!</span>
         </div>
-        <button id="btn-dismiss-banner" type="button" class="btn-banner-ok">Tiếp tục</button>
+        <button id="btn-dismiss-banner" type="button" class="btn-banner-ok">Đánh tiếp luôn</button>
       </div>
 
-      <!-- Tâm điểm duy nhất: Trang Vở Ô Ly Việt Nam -->
+      <!-- Tâm điểm duy nhất: Trang Vở Ô Ly 9x đặt trên mặt bàn gỗ -->
       <div class="gameplay-sheet-stage">
         <div class="notebook-paper-scroll">
           <canvas id="notebook-canvas"></canvas>
         </div>
       </div>
 
-      <!-- Thanh thông tin mỏng dưới chân trang vở -->
+      <!-- Mép dưới trang vở -->
       <footer class="game-minimal-footer">
-        <span id="current-page-stats">Đã khoanh: 0 ván • Điểm chết: 0 ô • Trống: 100%</span>
-        <span id="current-move-count">Nước đi: 0</span>
+        <span id="current-page-stats">Đã khoanh: 0 ván • Điểm chết: 0 ô • Giấy trống: 100%</span>
+        <span id="current-move-count">Nước thứ: 0</span>
       </footer>
     </section>
 
